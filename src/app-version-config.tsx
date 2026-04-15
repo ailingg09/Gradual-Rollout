@@ -7,7 +7,6 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SEGMENTS = [
-  'All Users',
   'VIP Users',
   'Churn Risk',
   'Beta Testers',
@@ -353,12 +352,23 @@ function SegmentDropdown({
         className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white hover:border-gray-400 transition-colors"
       >
         <span className={value ? 'text-slate-800' : 'text-gray-400'}>
-          {value || 'Select segment…'}
+          {value || 'All Users (default)'}
         </span>
-        <ChevronDown
-          size={14}
-          className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
+        <div className="flex items-center gap-1 shrink-0">
+          {value && (
+            <span
+              role="button"
+              onClick={e => { e.stopPropagation(); onChange(''); }}
+              className="text-gray-400 hover:text-gray-600 rounded p-0.5 hover:bg-gray-100 transition-colors"
+            >
+              <X size={13} />
+            </span>
+          )}
+          <ChevronDown
+            size={14}
+            className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </div>
       </button>
       {open && (
         <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg">
@@ -481,11 +491,12 @@ export default function AppVersionConfig() {
     autoTranslate: false,
     useGlobalRollout: true,
     localStages: [] as StageConfig[],
-    segment: 'All Users',
+    segment: '',
   });
 
   // Edit modal
   const [editModal, setEditModal] = useState<{ platformId: string; versionId: string } | null>(null);
+  const [editStagesExpanded, setEditStagesExpanded] = useState(false);
   const [editForm, setEditForm] = useState({
     version: '',
     downloadLinks: ['', '', '', ''],
@@ -495,7 +506,7 @@ export default function AppVersionConfig() {
     setAsDefault: false,
     setAsMin: false,
     rolloutStages: [] as StageConfig[],
-    rolloutSegment: 'All Users',
+    rolloutSegment: '',
     rolloutModified: false,
   });
 
@@ -559,7 +570,7 @@ export default function AppVersionConfig() {
       autoTranslate: false,
       useGlobalRollout: true,
       localStages: globalStages.map(s => ({ ...s })),
-      segment: 'All Users',
+      segment: '',
     });
   };
 
@@ -568,6 +579,7 @@ export default function AppVersionConfig() {
     const version  = platform?.versions.find(v => v.id === versionId);
     if (!version) return;
     setEditModal({ platformId, versionId });
+    setEditStagesExpanded(false);
     setEditForm({
       version: version.version,
       downloadLinks: [...version.downloadLinks],
@@ -577,7 +589,7 @@ export default function AppVersionConfig() {
       setAsDefault: version.isDefault,
       setAsMin: version.isMinVersion,
       rolloutStages: version.rollout?.stageConfig.map(s => ({ ...s })) ?? globalStages.map(s => ({ ...s })),
-      rolloutSegment: version.rollout?.segment ?? 'All Users',
+      rolloutSegment: version.rollout?.segment === 'All Users' ? '' : (version.rollout?.segment ?? ''),
       rolloutModified: false,
     });
   };
@@ -610,7 +622,7 @@ export default function AppVersionConfig() {
   const handleSaveAdd = () => {
     if (!addModal) return;
     const stageConfig = addForm.useGlobalRollout ? globalStages : addForm.localStages;
-    const seg         = addForm.useGlobalRollout ? 'All Users' : addForm.segment;
+    const seg         = addForm.segment || 'All Users';
     const newVersion: VersionData = {
       id: `${addModal.platformId}-${addForm.version}-${Date.now()}`,
       version: addForm.version,
@@ -665,7 +677,7 @@ export default function AppVersionConfig() {
         versions: p.versions.map(v => {
           if (v.id !== editModal.versionId) return v;
           const cfg = editForm.rolloutStages;
-          const seg = editForm.rolloutSegment;
+          const seg = editForm.rolloutSegment || 'All Users';
 
           // Archive the completed run into history
           const newHistory: RolloutHistory[] = [
@@ -737,7 +749,7 @@ export default function AppVersionConfig() {
                 Completed
               </span>
               <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">
-                {r.segment}
+                {r.segment || 'All Users'}
               </span>
             </div>
             <div className="flex justify-between text-xs font-medium mb-1">
@@ -841,7 +853,7 @@ export default function AppVersionConfig() {
                 {getActiveStageBadge(r)}
               </span>
               <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">
-                {r.segment}
+                {r.segment || 'All Users'}
               </span>
             </div>
             <ChevronDown
@@ -1138,80 +1150,80 @@ export default function AppVersionConfig() {
               <hr className="border-gray-100" />
 
               {/* Rollout section */}
-              <div>
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-sm font-semibold text-slate-700">Gradual Rollout Stages</h3>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setAddForm(f => ({
-                        ...f,
-                        useGlobalRollout: !f.useGlobalRollout,
-                        localStages: f.useGlobalRollout
-                          ? globalStages.map(s => ({ ...s }))
-                          : f.localStages,
-                      }))
-                    }
-                    className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${
-                      addForm.useGlobalRollout
-                        ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                        : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
-                    }`}
-                  >
-                    {addForm.useGlobalRollout
-                      ? 'Using Global Config — Switch to Custom'
-                      : 'Using Custom Config — Switch to Global'}
-                  </button>
+              <div className="space-y-4">
+                {/* Segment — always visible, independent of global/custom */}
+                <div className="space-y-1">
+                  <label className="block text-sm font-semibold text-slate-700">Target Segment</label>
+                  <SegmentDropdown
+                    value={addForm.segment}
+                    onChange={v => setAddForm(f => ({ ...f, segment: v }))}
+                  />
+                  <p className="text-xs text-gray-400">
+                    Leave blank to target all users. At 100%, all users in the selected segment receive the update.
+                  </p>
                 </div>
 
-                {addForm.useGlobalRollout ? (
-                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-2 border border-blue-200">
-                    {globalStages.map((item, index) => (
-                      <div key={item.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">
-                          {index + 1}
-                        </div>
-                        <div className="flex-1 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-slate-800">Target {item.percent}%</span>
-                            <span className="text-gray-400">•</span>
-                            <span className="text-xs text-gray-600">
-                              ~{Math.round(82000 * item.percent / 100).toLocaleString()} users
-                            </span>
-                          </div>
-                          <span className="text-sm font-semibold text-slate-700">Wait {item.time}h</span>
-                        </div>
-                      </div>
-                    ))}
-                    <p className="text-xs text-gray-400 text-center pt-1">
-                      Targeting <strong>All Users</strong> · Click the button above to customise
-                    </p>
+                {/* Stage config */}
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-semibold text-slate-700">Gradual Rollout Stages</h3>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAddForm(f => ({
+                          ...f,
+                          useGlobalRollout: !f.useGlobalRollout,
+                          localStages: f.useGlobalRollout
+                            ? globalStages.map(s => ({ ...s }))
+                            : f.localStages,
+                        }))
+                      }
+                      className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${
+                        addForm.useGlobalRollout
+                          ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                          : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                      }`}
+                    >
+                      {addForm.useGlobalRollout
+                        ? 'Using Global Config — Switch to Custom'
+                        : 'Using Custom Config — Switch to Global'}
+                    </button>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="block text-sm font-semibold text-slate-700">Target Segment</label>
-                      <SegmentDropdown
-                        value={addForm.segment}
-                        onChange={v => setAddForm(f => ({ ...f, segment: v }))}
-                      />
-                      <p className="text-xs text-gray-400">
-                        At 100%, all users in this segment will receive the update.
+
+                  {addForm.useGlobalRollout ? (
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-2 border border-blue-200">
+                      {globalStages.map((item, index) => (
+                        <div key={item.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-slate-800">Target {item.percent}%</span>
+                              <span className="text-gray-400">•</span>
+                              <span className="text-xs text-gray-600">
+                                ~{Math.round((segmentSize(addForm.segment || 'All Users')) * item.percent / 100).toLocaleString()} users
+                              </span>
+                            </div>
+                            <span className="text-sm font-semibold text-slate-700">Wait {item.time}h</span>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-xs text-gray-400 text-center pt-1">
+                        Click the button above to customise stages
                       </p>
                     </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Rollout Stages</label>
-                      <StagesEditor
-                        stages={addForm.localStages}
-                        onChange={updateAddStage}
-                        onAdd={addAddStage}
-                        onDelete={deleteAddStage}
-                      />
-                    </div>
-                  </div>
-                )}
+                  ) : (
+                    <StagesEditor
+                      stages={addForm.localStages}
+                      onChange={updateAddStage}
+                      onAdd={addAddStage}
+                      onDelete={deleteAddStage}
+                    />
+                  )}
+                </div>
 
-                <div className="mt-3 flex gap-2 items-start text-xs bg-blue-50 border border-blue-200 p-3 rounded-lg">
+                <div className="flex gap-2 items-start text-xs bg-blue-50 border border-blue-200 p-3 rounded-lg">
                   <span className="text-base">💡</span>
                   <div>
                     <p className="text-blue-900 font-medium mb-1">
@@ -1219,8 +1231,8 @@ export default function AppVersionConfig() {
                     </p>
                     <p className="text-blue-700 leading-relaxed">
                       {addForm.useGlobalRollout
-                        ? 'Uses the global configuration targeting All Users. After saving, click Start Rollout on Stage 1 to begin.'
-                        : `Custom rollout targeting ${addForm.segment}. After saving, click Start Rollout on Stage 1 to begin.`}
+                        ? `Uses the global stage configuration. After saving, click Start Rollout on Stage 1 to begin.`
+                        : `Uses a custom stage configuration. After saving, click Start Rollout on Stage 1 to begin.`}
                     </p>
                   </div>
                 </div>
@@ -1354,14 +1366,26 @@ export default function AppVersionConfig() {
                   <>
                     <hr className="border-gray-100" />
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-slate-700">Gradual Rollout Configuration</h3>
-                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
-                          Latest Version Only
-                        </span>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditStagesExpanded(v => !v)}
+                        className="w-full flex items-center justify-between group"
+                      >
+                        <h3 className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
+                          Gradual Rollout Configuration
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                            Latest Version Only
+                          </span>
+                          <ChevronDown
+                            size={15}
+                            className={`text-gray-400 transition-transform ${editStagesExpanded ? '' : '-rotate-90'}`}
+                          />
+                        </div>
+                      </button>
 
-                      {rs === 'in_progress' ? (
+                      {editStagesExpanded && (rs === 'in_progress' ? (
                         /* Locked while rollout is running */
                         <div className="flex gap-3 items-start bg-amber-50 border border-amber-200 rounded-lg p-3">
                           <span className="text-base shrink-0">🔒</span>
@@ -1386,8 +1410,8 @@ export default function AppVersionConfig() {
                             />
                           </div>
 
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Rollout Stages</label>
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-slate-700">Rollout Stages</label>
                             <StagesEditor
                               stages={editForm.rolloutStages}
                               onChange={updateEditStage}
@@ -1409,7 +1433,7 @@ export default function AppVersionConfig() {
                             </div>
                           )}
                         </>
-                      )}
+                      ))}
                     </div>
                   </>
                 );
