@@ -470,6 +470,7 @@ export default function AppVersionConfig() {
   const [platforms, setPlatforms] = useState<PlatformData[]>(INITIAL_PLATFORMS);
   const [globalStages, setGlobalStages] = useState<StageConfig[]>(INITIAL_GLOBAL_CONFIG);
   const [showGlobalConfigModal, setShowGlobalConfigModal] = useState(false);
+  const [showRerunConfirm, setShowRerunConfirm] = useState(false);
 
   // Add modal
   const [addModal, setAddModal] = useState<{ platformId: string } | null>(null);
@@ -1256,7 +1257,7 @@ export default function AppVersionConfig() {
               <h2 className="text-lg font-bold text-slate-800">
                 Edit {editingPlatform?.name} v{editingVersion?.version} Configuration
               </h2>
-              <button onClick={() => setEditModal(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setEditModal(null); setShowRerunConfirm(false); }} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
@@ -1423,7 +1424,7 @@ export default function AppVersionConfig() {
                   editingVersion.rollout?.status === 'completed' &&
                   editForm.rolloutModified && (
                   <button
-                    onClick={handleRerunRollout}
+                    onClick={() => setShowRerunConfirm(true)}
                     className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2 transition-colors"
                   >
                     <RefreshCw size={15} /> Rerun Rollout
@@ -1432,7 +1433,7 @@ export default function AppVersionConfig() {
               </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setEditModal(null)}
+                  onClick={() => { setEditModal(null); setShowRerunConfirm(false); }}
                   className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
@@ -1562,6 +1563,50 @@ export default function AppVersionConfig() {
                   <Save size={16} /> Save Config
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          RERUN ROLLOUT CONFIRMATION DIALOG
+      ═══════════════════════════════════════════════════════════════════════ */}
+      {showRerunConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg w-full max-w-sm shadow-2xl">
+            <div className="p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center shrink-0">
+                  <RefreshCw size={18} className="text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Confirm Rerun Rollout</h3>
+                  <p className="text-xs text-gray-500">This will restart the rollout from Stage 1</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-700 mb-3">
+                Are you sure you want to rerun the rollout for{' '}
+                <strong>v{editingVersion?.version}</strong>?
+              </p>
+              <div className="bg-purple-50 border border-purple-100 rounded-md p-3 text-xs text-purple-800 space-y-1.5">
+                <p>• Target segment: <strong>{editForm.rolloutSegment}</strong></p>
+                <p>• Stage 1 will begin immediately with the new configuration</p>
+                <p>• Users who already updated will keep their version</p>
+              </div>
+            </div>
+            <div className="px-5 pb-5 flex justify-end gap-3">
+              <button
+                onClick={() => setShowRerunConfirm(false)}
+                className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setShowRerunConfirm(false); handleRerunRollout(); }}
+                className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2"
+              >
+                <RefreshCw size={14} /> Confirm Rerun
+              </button>
             </div>
           </div>
         </div>
