@@ -141,7 +141,7 @@ const INITIAL_PLATFORMS: PlatformData[] = [
         changelogZh: 'Performance optimization',
         changelogEn: 'Performance optimization',
         isLatest: true,
-        isDefault: true,
+        isDefault: false, // Beta Testers rollout — segment-specific, never earns default tag
         isMinVersion: false,
         updatedAt: '2025-09-29 15:44:36',
         rolloutHistory: [],
@@ -167,9 +167,66 @@ const INITIAL_PLATFORMS: PlatformData[] = [
   {
     id: 'ios',
     name: 'IOS',
-    dotColor: 'bg-gray-300',
-    expanded: false,
-    versions: [],
+    dotColor: 'bg-blue-500',
+    expanded: true,
+    versions: [
+      {
+        id: 'ios-2.1.0',
+        version: '2.1.0',
+        downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
+        changelogZh: '新功能：改进的用户界面和性能优化',
+        changelogEn: 'New features: improved UI and performance optimizations',
+        isLatest: true,
+        isDefault: true,
+        isMinVersion: false,
+        updatedAt: '2025-10-15 09:30:00',
+        rolloutHistory: [],
+        rollout: {
+          stages: [
+            { id: 1, target: '5%',   users: 4100,  time: '6 hours',  status: 'completed' },
+            { id: 2, target: '15%',  users: 12300, time: '6 hours',  status: 'completed' },
+            { id: 3, target: '40%',  users: 32800, time: '12 hours', status: 'completed' },
+            { id: 4, target: '100%', users: 82000, time: '0 hours',  status: 'completed' },
+          ],
+          stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
+          segment: 'All Users',
+          startTime: '2025-10-05 10:00:00',
+          currentPercent: 100,
+          currentUsers: 82000,
+          totalTargetUsers: 82000,
+          expanded: false,
+          status: 'completed',
+        },
+      },
+      {
+        id: 'ios-2.0.5',
+        version: '2.0.5',
+        downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
+        changelogZh: '错误修复和稳定性改进',
+        changelogEn: 'Bug fixes and stability improvements',
+        isLatest: false,
+        isDefault: false,
+        isMinVersion: false,
+        updatedAt: '2025-09-01 14:20:00',
+        rolloutHistory: [],
+        rollout: {
+          stages: [
+            { id: 1, target: '5%',   users: 130,  time: '6 hours',  status: 'completed' },
+            { id: 2, target: '15%',  users: 390,  time: '6 hours',  status: 'completed' },
+            { id: 3, target: '40%',  users: 1040, time: '12 hours', status: 'completed' },
+            { id: 4, target: '100%', users: 2600, time: '0 hours',  status: 'completed' },
+          ],
+          stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
+          segment: 'VIP Users',
+          startTime: '2025-08-22 08:00:00',
+          currentPercent: 100,
+          currentUsers: 2600,
+          totalTargetUsers: 2600,
+          expanded: false,
+          status: 'completed',
+        },
+      },
+    ],
   },
   {
     id: 'android',
@@ -254,6 +311,25 @@ function getSegmentOverlap(
     SEGMENT_OVERLAPS[toSegment]?.[fromSegment] ??
     0;
   return Math.round(rawOverlap * updateRatio);
+}
+
+/**
+ * When a version completes a rollout targeting All Users (segment '' or 'All Users'),
+ * it automatically becomes the platform default. This sets isDefault=true for that
+ * version and isDefault=false for every other version in the same platform.
+ * For segment-specific completions this should NOT be called — no default tag change.
+ */
+function applyDefaultTagOnCompletion(
+  platforms: PlatformData[],
+  platformId: string,
+  versionId: string,
+): PlatformData[] {
+  return platforms.map(p =>
+    p.id !== platformId ? p : {
+      ...p,
+      versions: p.versions.map(v => ({ ...v, isDefault: v.id === versionId })),
+    }
+  );
 }
 
 /** Sum intersecting updated users across all past rollout runs for a new target segment. */
@@ -671,12 +747,26 @@ export default function AppVersionConfig() {
   // Rerun: archives current completed rollout to history, pre-calculates intersecting
   // users for the new segment, then sets status to not_started so the admin must
   // press Start (same flow as a newly added version).
+  // Side-effect: if the archived (completed) rollout targeted All Users, the version
+  // automatically earns the platform default tag at that moment of completion.
   const handleRerunRollout = () => {
     if (!editModal) return;
-    setPlatforms(prev => prev.map(p =>
-      p.id !== editModal.platformId ? p : {
-        ...p,
-        versions: p.versions.map(v => {
+
+    // Read completed rollout segment BEFORE mutating state
+    const prevVersion = platforms
+      .find(p => p.id === editModal.platformId)
+      ?.versions.find(v => v.id === editModal.versionId);
+    const completedSeg = prevVersion?.rollout?.status === 'completed'
+      ? prevVersion.rollout.segment
+      : null;
+    const completionEarnsDefault =
+      completedSeg === '' || completedSeg === 'All Users';
+
+    setPlatforms(prev => {
+      let next = prev.map(p =>
+        p.id !== editModal.platformId ? p : {
+          ...p,
+          versions: p.versions.map(v => {
           if (v.id !== editModal.versionId) return v;
           const cfg = editForm.rolloutStages;
           const seg = editForm.rolloutSegment || 'All Users';
@@ -727,7 +817,15 @@ export default function AppVersionConfig() {
           };
         }),
       }
-    ));
+    );
+
+      // If the completed rollout targeted All Users, award the default tag now
+      if (completionEarnsDefault) {
+        next = applyDefaultTagOnCompletion(next, editModal.platformId, editModal.versionId);
+      }
+
+      return next;
+    });
     setEditModal(null);
   };
 
