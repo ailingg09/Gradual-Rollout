@@ -668,8 +668,9 @@ export default function AppVersionConfig() {
     setEditModal(null);
   };
 
-  // Rerun: archives current completed rollout to history, calculates intersecting users
-  // already updated in the new segment, then starts immediately (stage 1 → active).
+  // Rerun: archives current completed rollout to history, pre-calculates intersecting
+  // users for the new segment, then sets status to not_started so the admin must
+  // press Start (same flow as a newly added version).
   const handleRerunRollout = () => {
     if (!editModal) return;
     setPlatforms(prev => prev.map(p =>
@@ -705,8 +706,8 @@ export default function AppVersionConfig() {
             target: `${s.percent}%`,
             users: Math.round(total * s.percent / 100),
             time: `${s.time} hours`,
-            status: i === 0 ? 'active' : 'pending',
-            timeLeft: i === 0 ? `${s.time}h 0m left` : undefined,
+            status: 'pending',
+            timeLeft: undefined,
           }));
 
           return {
@@ -716,12 +717,12 @@ export default function AppVersionConfig() {
               stages,
               stageConfig: cfg.map(s => ({ ...s })),
               segment: seg,
-              startTime: new Date().toISOString().replace('T', ' ').substring(0, 19),
+              startTime: '',
               currentPercent: startingPercent,
               currentUsers: startingUsers,
               totalTargetUsers,
-              expanded: v.rollout?.expanded ?? true,
-              status: 'in_progress' as RolloutStatus,
+              expanded: true, // always expand so Start button is immediately visible
+              status: 'not_started' as RolloutStatus,
             },
           };
         }),
@@ -1605,7 +1606,7 @@ export default function AppVersionConfig() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">Confirm Rerun Rollout</h3>
-                  <p className="text-xs text-gray-500">This will restart the rollout from Stage 1</p>
+                  <p className="text-xs text-gray-500">Resets rollout to Not Started — you'll press Start to begin</p>
                 </div>
               </div>
               <p className="text-sm text-slate-700 mb-3">
@@ -1613,8 +1614,8 @@ export default function AppVersionConfig() {
                 <strong>v{editingVersion?.version}</strong>?
               </p>
               <div className="bg-purple-50 border border-purple-100 rounded-md p-3 text-xs text-purple-800 space-y-1.5">
-                <p>• Target segment: <strong>{editForm.rolloutSegment}</strong></p>
-                <p>• Stage 1 will begin immediately with the new configuration</p>
+                <p>• Target segment: <strong>{editForm.rolloutSegment || 'All Users'}</strong></p>
+                <p>• Rollout will be reset — press Start on Stage 1 to begin</p>
                 <p>• Users who already updated will keep their version</p>
               </div>
             </div>
