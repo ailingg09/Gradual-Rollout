@@ -585,6 +585,7 @@ export default function AppVersionConfig() {
     rolloutStages: [] as StageConfig[],
     rolloutSegment: '',
     rolloutModified: false,
+    editUseGlobal: false,
   });
 
   // ── Derived ──
@@ -668,6 +669,7 @@ export default function AppVersionConfig() {
       rolloutStages: version.rollout?.stageConfig.map(s => ({ ...s })) ?? globalStages.map(s => ({ ...s })),
       rolloutSegment: version.rollout?.segment === 'All Users' ? '' : (version.rollout?.segment ?? ''),
       rolloutModified: false,
+      editUseGlobal: false,
     });
   };
 
@@ -768,7 +770,7 @@ export default function AppVersionConfig() {
           ...p,
           versions: p.versions.map(v => {
           if (v.id !== editModal.versionId) return v;
-          const cfg = editForm.rolloutStages;
+          const cfg = editForm.editUseGlobal ? globalStages : editForm.rolloutStages;
           const seg = editForm.rolloutSegment || 'All Users';
 
           // Archive the completed run into history
@@ -1511,13 +1513,64 @@ export default function AppVersionConfig() {
                           </div>
 
                           <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-700">Rollout Stages</label>
-                            <StagesEditor
-                              stages={editForm.rolloutStages}
-                              onChange={updateEditStage}
-                              onAdd={addEditStage}
-                              onDelete={deleteEditStage}
-                            />
+                            <div className="flex justify-between items-center">
+                              <label className="block text-sm font-medium text-slate-700">Rollout Stages</label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditForm(f => ({
+                                    ...f,
+                                    editUseGlobal: !f.editUseGlobal,
+                                    // seed local stages from global when switching to custom
+                                    rolloutStages: !f.editUseGlobal
+                                      ? f.rolloutStages
+                                      : globalStages.map(s => ({ ...s })),
+                                    rolloutModified: true,
+                                  }))
+                                }
+                                className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${
+                                  editForm.editUseGlobal
+                                    ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                                    : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                                }`}
+                              >
+                                {editForm.editUseGlobal
+                                  ? 'Using Global Config — Switch to Custom'
+                                  : 'Using Custom Config — Switch to Global'}
+                              </button>
+                            </div>
+
+                            {editForm.editUseGlobal ? (
+                              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-2 border border-blue-200">
+                                {globalStages.map((item, index) => (
+                                  <div key={item.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center gap-3">
+                                    <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs border border-blue-100 shrink-0">
+                                      {index + 1}
+                                    </div>
+                                    <div className="flex-1 flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-bold text-slate-800">Target {item.percent}%</span>
+                                        <span className="text-gray-400">•</span>
+                                        <span className="text-xs text-gray-600">
+                                          ~{Math.round(segmentSize(editForm.rolloutSegment || 'All Users') * item.percent / 100).toLocaleString()} users
+                                        </span>
+                                      </div>
+                                      <span className="text-sm font-semibold text-slate-700">Wait {item.time}h</span>
+                                    </div>
+                                  </div>
+                                ))}
+                                <p className="text-xs text-gray-400 text-center pt-1">
+                                  Click the button above to customise stages
+                                </p>
+                              </div>
+                            ) : (
+                              <StagesEditor
+                                stages={editForm.rolloutStages}
+                                onChange={updateEditStage}
+                                onAdd={addEditStage}
+                                onDelete={deleteEditStage}
+                              />
+                            )}
                           </div>
 
                           {editForm.rolloutModified && rs === 'completed' && (
