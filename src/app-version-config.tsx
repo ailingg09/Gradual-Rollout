@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ChevronRight, ChevronDown, Plus, MoreHorizontal, Edit2,
   Copy, Trash2, Clock, Settings, Save, X, RotateCcw, Check, RefreshCw, Play,
+  ShieldAlert,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -14,7 +15,6 @@ const SEGMENTS = [
   'High Usage',
 ];
 
-// Approximate user count per segment (used as the denominator for update status)
 const SEGMENT_SIZES: Record<string, number> = {
   'All Users':           82000,
   'VIP Users':           5200,
@@ -24,39 +24,12 @@ const SEGMENT_SIZES: Record<string, number> = {
   'High Usage':          14600,
 };
 
-// Pre-defined overlap counts: how many users belong to BOTH segment A and segment B.
-// Used to calculate intersecting updated users when switching segments on a rerun.
 const SEGMENT_OVERLAPS: Record<string, Record<string, number>> = {
-  'Beta Testers': {
-    'VIP Users':          320,
-    'High Usage':         480,
-    'Churn Risk':         180,
-    'Internal Employees': 200,
-  },
-  'VIP Users': {
-    'Beta Testers':       320,
-    'High Usage':         1100,
-    'Churn Risk':         680,
-    'Internal Employees': 160,
-  },
-  'High Usage': {
-    'Beta Testers':       480,
-    'VIP Users':          1100,
-    'Churn Risk':         2200,
-    'Internal Employees': 180,
-  },
-  'Churn Risk': {
-    'Beta Testers':       180,
-    'VIP Users':          680,
-    'High Usage':         2200,
-    'Internal Employees': 80,
-  },
-  'Internal Employees': {
-    'Beta Testers':       200,
-    'VIP Users':          160,
-    'High Usage':         180,
-    'Churn Risk':         80,
-  },
+  'Beta Testers': { 'VIP Users': 320, 'High Usage': 480, 'Churn Risk': 180, 'Internal Employees': 200 },
+  'VIP Users':    { 'Beta Testers': 320, 'High Usage': 1100, 'Churn Risk': 680, 'Internal Employees': 160 },
+  'High Usage':   { 'Beta Testers': 480, 'VIP Users': 1100, 'Churn Risk': 2200, 'Internal Employees': 180 },
+  'Churn Risk':   { 'Beta Testers': 180, 'VIP Users': 680, 'High Usage': 2200, 'Internal Employees': 80 },
+  'Internal Employees': { 'Beta Testers': 200, 'VIP Users': 160, 'High Usage': 180, 'Churn Risk': 80 },
 };
 
 const INITIAL_GLOBAL_CONFIG: StageConfig[] = [
@@ -68,28 +41,16 @@ const INITIAL_GLOBAL_CONFIG: StageConfig[] = [
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface StageConfig {
-  id: number;
-  percent: number;
-  time: number;
-}
+interface StageConfig { id: number; percent: number; time: number; }
 
 interface RolloutStageDisplay {
-  id: number;
-  target: string;
-  users: number;
-  time: string;
-  status: 'completed' | 'active' | 'pending';
-  timeLeft?: string;
+  id: number; target: string; users: number; time: string;
+  status: 'completed' | 'active' | 'pending'; timeLeft?: string;
 }
 
-type RolloutStatus = 'not_started' | 'in_progress' | 'completed';
+type RolloutStatus = 'not_started' | 'in_progress' | 'completed' | 'stopped';
 
-interface RolloutHistory {
-  segment: string;
-  usersUpdated: number;
-  completedAt: string;
-}
+interface RolloutHistory { segment: string; usersUpdated: number; completedAt: string; }
 
 interface RolloutData {
   stages: RolloutStageDisplay[];
@@ -104,47 +65,31 @@ interface RolloutData {
 }
 
 interface VersionData {
-  id: string;
-  version: string;
-  downloadLinks: string[];
-  changelogZh: string;
-  changelogEn: string;
-  isLatest: boolean;
-  isDefault: boolean;
-  isMinVersion: boolean;
-  updatedAt: string;
-  rollout?: RolloutData;
-  rolloutHistory: RolloutHistory[];
+  id: string; version: string; downloadLinks: string[];
+  changelogZh: string; changelogEn: string;
+  isLatest: boolean; isDefault: boolean; isMinVersion: boolean; isFaulty: boolean;
+  updatedAt: string; rollout?: RolloutData; rolloutHistory: RolloutHistory[];
 }
 
 interface PlatformData {
-  id: string;
-  name: string;
-  dotColor: string;
-  expanded: boolean;
+  id: string; name: string; dotColor: string; expanded: boolean;
   versions: VersionData[];
+  forceUpdateVersion: string | null;
 }
 
 // ─── Initial Mock Data ────────────────────────────────────────────────────────
 
 const INITIAL_PLATFORMS: PlatformData[] = [
   {
-    id: 'windows',
-    name: 'WINDOWS',
-    dotColor: 'bg-blue-500',
-    expanded: false,
+    id: 'windows', name: 'WINDOWS', dotColor: 'bg-blue-500', expanded: false,
+    forceUpdateVersion: '1.0.20',
     versions: [
       {
-        id: 'win-1.0.21',
-        version: '1.0.21',
+        id: 'win-1.0.21', version: '1.0.21',
         downloadLinks: ['https://down.hznode.cc/hz-win-1.0.21.exe', '', '', ''],
-        changelogZh: 'Performance optimization',
-        changelogEn: 'Performance optimization',
-        isLatest: true,
-        isDefault: false, // Beta Testers rollout — segment-specific, never earns default tag
-        isMinVersion: false,
-        updatedAt: '2025-09-29 15:44:36',
-        rolloutHistory: [],
+        changelogZh: 'Performance optimization', changelogEn: 'Performance optimization',
+        isLatest: true, isDefault: false, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-09-29 15:44:36', rolloutHistory: [],
         rollout: {
           stages: [
             { id: 1, target: '5%',   users: 120,  time: '6 hours',  status: 'completed' },
@@ -153,34 +98,17 @@ const INITIAL_PLATFORMS: PlatformData[] = [
             { id: 4, target: '100%', users: 2400, time: '0 hours',  status: 'completed' },
           ],
           stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
-          segment: 'Beta Testers',
-          startTime: '2025-09-20 10:00:00',
-          currentPercent: 100,
-          currentUsers: 2400,
-          totalTargetUsers: 2400,
-          expanded: false,
-          status: 'completed',
+          segment: 'Beta Testers', startTime: '2025-09-20 10:00:00',
+          currentPercent: 100, currentUsers: 2400, totalTargetUsers: 2400,
+          expanded: false, status: 'completed',
         },
       },
-    ],
-  },
-  {
-    id: 'ios',
-    name: 'IOS',
-    dotColor: 'bg-blue-500',
-    expanded: true,
-    versions: [
       {
-        id: 'ios-2.1.0',
-        version: '2.1.0',
-        downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
-        changelogZh: '新功能：改进的用户界面和性能优化',
-        changelogEn: 'New features: improved UI and performance optimizations',
-        isLatest: true,
-        isDefault: true,
-        isMinVersion: false,
-        updatedAt: '2025-10-15 09:30:00',
-        rolloutHistory: [],
+        id: 'win-1.0.20', version: '1.0.20',
+        downloadLinks: ['https://down.hznode.cc/hz-win-1.0.20.exe', '', '', ''],
+        changelogZh: '错误修复', changelogEn: 'Bug fixes',
+        isLatest: false, isDefault: true, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-08-10 14:00:00', rolloutHistory: [],
         rollout: {
           stages: [
             { id: 1, target: '5%',   users: 4100,  time: '6 hours',  status: 'completed' },
@@ -189,26 +117,44 @@ const INITIAL_PLATFORMS: PlatformData[] = [
             { id: 4, target: '100%', users: 82000, time: '0 hours',  status: 'completed' },
           ],
           stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
-          segment: 'All Users',
-          startTime: '2025-10-05 10:00:00',
-          currentPercent: 100,
-          currentUsers: 82000,
-          totalTargetUsers: 82000,
-          expanded: false,
-          status: 'completed',
+          segment: 'All Users', startTime: '2025-08-01 10:00:00',
+          currentPercent: 100, currentUsers: 82000, totalTargetUsers: 82000,
+          expanded: false, status: 'completed',
         },
       },
       {
-        id: 'ios-2.0.5',
-        version: '2.0.5',
+        id: 'win-1.0.19', version: '1.0.19',
+        downloadLinks: ['https://down.hznode.cc/hz-win-1.0.19.exe', '', '', ''],
+        changelogZh: '安全补丁', changelogEn: 'Security patch',
+        isLatest: false, isDefault: false, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-07-15 09:00:00', rolloutHistory: [], rollout: undefined,
+      },
+      {
+        id: 'win-1.0.18', version: '1.0.18',
+        downloadLinks: ['https://down.hznode.cc/hz-win-1.0.18.exe', '', '', ''],
+        changelogZh: '功能更新', changelogEn: 'Feature update',
+        isLatest: false, isDefault: false, isMinVersion: true, isFaulty: false,
+        updatedAt: '2025-06-20 11:00:00', rolloutHistory: [], rollout: undefined,
+      },
+      {
+        id: 'win-1.0.17', version: '1.0.17',
+        downloadLinks: ['https://down.hznode.cc/hz-win-1.0.17.exe', '', '', ''],
+        changelogZh: '初始版本', changelogEn: 'Initial release',
+        isLatest: false, isDefault: false, isMinVersion: false, isFaulty: true,
+        updatedAt: '2025-05-10 08:00:00', rolloutHistory: [], rollout: undefined,
+      },
+    ],
+  },
+  {
+    id: 'ios', name: 'IOS', dotColor: 'bg-blue-500', expanded: true,
+    forceUpdateVersion: null,
+    versions: [
+      {
+        id: 'ios-2.1.0', version: '2.1.0',
         downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
-        changelogZh: '错误修复和稳定性改进',
-        changelogEn: 'Bug fixes and stability improvements',
-        isLatest: false,
-        isDefault: false,
-        isMinVersion: false,
-        updatedAt: '2025-09-01 14:20:00',
-        rolloutHistory: [],
+        changelogZh: '新功能：改进的用户界面和性能优化', changelogEn: 'New features: improved UI and performance optimizations',
+        isLatest: true, isDefault: true, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-10-15 09:30:00', rolloutHistory: [],
         rollout: {
           stages: [
             { id: 1, target: '5%',   users: 4100,  time: '6 hours',  status: 'completed' },
@@ -217,34 +163,63 @@ const INITIAL_PLATFORMS: PlatformData[] = [
             { id: 4, target: '100%', users: 82000, time: '0 hours',  status: 'completed' },
           ],
           stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
-          segment: 'All Users',
-          startTime: '2025-08-22 08:00:00',
-          currentPercent: 100,
-          currentUsers: 82000,
-          totalTargetUsers: 82000,
-          expanded: false,
-          status: 'completed',
+          segment: 'All Users', startTime: '2025-10-05 10:00:00',
+          currentPercent: 100, currentUsers: 82000, totalTargetUsers: 82000,
+          expanded: false, status: 'completed',
         },
+      },
+      {
+        id: 'ios-2.0.5', version: '2.0.5',
+        downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
+        changelogZh: '错误修复和稳定性改进', changelogEn: 'Bug fixes and stability improvements',
+        isLatest: false, isDefault: false, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-09-01 14:20:00', rolloutHistory: [],
+        rollout: {
+          stages: [
+            { id: 1, target: '5%',   users: 4100,  time: '6 hours',  status: 'completed' },
+            { id: 2, target: '15%',  users: 12300, time: '6 hours',  status: 'completed' },
+            { id: 3, target: '40%',  users: 32800, time: '12 hours', status: 'completed' },
+            { id: 4, target: '100%', users: 82000, time: '0 hours',  status: 'completed' },
+          ],
+          stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
+          segment: 'All Users', startTime: '2025-08-22 08:00:00',
+          currentPercent: 100, currentUsers: 82000, totalTargetUsers: 82000,
+          expanded: false, status: 'completed',
+        },
+      },
+      {
+        id: 'ios-2.0.3', version: '2.0.3',
+        downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
+        changelogZh: '性能改进', changelogEn: 'Performance improvements',
+        isLatest: false, isDefault: false, isMinVersion: true, isFaulty: false,
+        updatedAt: '2025-07-05 10:00:00', rolloutHistory: [], rollout: undefined,
+      },
+      {
+        id: 'ios-2.0.1', version: '2.0.1',
+        downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
+        changelogZh: '严重错误修复', changelogEn: 'Critical bug fix',
+        isLatest: false, isDefault: false, isMinVersion: false, isFaulty: true,
+        updatedAt: '2025-06-10 12:00:00', rolloutHistory: [], rollout: undefined,
+      },
+      {
+        id: 'ios-2.0.0', version: '2.0.0',
+        downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
+        changelogZh: '主要版本发布', changelogEn: 'Major version release',
+        isLatest: false, isDefault: false, isMinVersion: false, isFaulty: true,
+        updatedAt: '2025-05-01 09:00:00', rolloutHistory: [], rollout: undefined,
       },
     ],
   },
   {
-    id: 'android',
-    name: 'ANDROID',
-    dotColor: 'bg-green-500',
-    expanded: true,
+    id: 'android', name: 'ANDROID', dotColor: 'bg-green-500', expanded: true,
+    forceUpdateVersion: '1.0.21',
     versions: [
       {
-        id: 'android-1.0.22',
-        version: '1.0.22',
+        id: 'android-1.0.22', version: '1.0.22',
         downloadLinks: ['https://down.hznode.cc/hz1.0.22.apk', '', '', ''],
-        changelogZh: 'Performance optimization',
-        changelogEn: 'Performance optimization',
-        isLatest: true,
-        isDefault: false,
-        isMinVersion: false,
-        updatedAt: '2025-10-30 10:20:15',
-        rolloutHistory: [],
+        changelogZh: 'Performance optimization', changelogEn: 'Performance optimization',
+        isLatest: true, isDefault: false, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-10-30 10:20:15', rolloutHistory: [],
         rollout: {
           stages: [
             { id: 1, target: '5%',   users: 4100,  time: '6 hours',  status: 'completed' },
@@ -253,125 +228,106 @@ const INITIAL_PLATFORMS: PlatformData[] = [
             { id: 4, target: '100%', users: 82000, time: '0 hours',  status: 'pending' },
           ],
           stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
-          segment: 'All Users',
-          startTime: '2025-10-29 15:44:36',
-          currentPercent: 9.6,
-          currentUsers: 1077,
-          totalTargetUsers: 82000,
-          expanded: true,
-          status: 'in_progress',
+          segment: 'All Users', startTime: '2025-10-29 15:44:36',
+          currentPercent: 9.6, currentUsers: 1077, totalTargetUsers: 82000,
+          expanded: true, status: 'in_progress',
         },
       },
       {
-        id: 'android-1.0.21',
-        version: '1.0.21',
+        id: 'android-1.0.21', version: '1.0.21',
         downloadLinks: ['https://down.hznode.cc/hz1.0.21.apk', '', '', ''],
-        changelogZh: 'Bug fixes',
-        changelogEn: 'Bug fixes',
-        isLatest: false,
-        isDefault: true,
-        isMinVersion: false,
-        updatedAt: '2025-09-29 15:44:36',
-        rolloutHistory: [],
-        rollout: undefined,
+        changelogZh: 'Bug fixes', changelogEn: 'Bug fixes',
+        isLatest: false, isDefault: true, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-09-29 15:44:36', rolloutHistory: [], rollout: undefined,
+      },
+      {
+        id: 'android-1.0.20', version: '1.0.20',
+        downloadLinks: ['https://down.hznode.cc/hz1.0.20.apk', '', '', ''],
+        changelogZh: '界面更新', changelogEn: 'UI updates',
+        isLatest: false, isDefault: false, isMinVersion: false, isFaulty: false,
+        updatedAt: '2025-08-15 10:00:00', rolloutHistory: [], rollout: undefined,
+      },
+      {
+        id: 'android-1.0.19', version: '1.0.19',
+        downloadLinks: ['https://down.hznode.cc/hz1.0.19.apk', '', '', ''],
+        changelogZh: '崩溃修复', changelogEn: 'Crash fix',
+        isLatest: false, isDefault: false, isMinVersion: true, isFaulty: false,
+        updatedAt: '2025-07-20 08:30:00', rolloutHistory: [], rollout: undefined,
+      },
+      {
+        id: 'android-1.0.18', version: '1.0.18',
+        downloadLinks: ['https://down.hznode.cc/hz1.0.18.apk', '', '', ''],
+        changelogZh: '已知严重错误', changelogEn: 'Known critical bugs',
+        isLatest: false, isDefault: false, isMinVersion: false, isFaulty: true,
+        updatedAt: '2025-06-30 09:00:00', rolloutHistory: [], rollout: undefined,
       },
     ],
   },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Pure Helpers ─────────────────────────────────────────────────────────────
 
 function segmentSize(segment: string): number {
   return SEGMENT_SIZES[segment] ?? 82000;
 }
 
-/**
- * Returns how many users in `toSegment` have already received the update
- * given that `fromUsersUpdated` users in `fromSegment` have updated.
- */
-function getSegmentOverlap(
-  fromSegment: string,
-  fromUsersUpdated: number,
-  toSegment: string,
-): number {
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function getEligibleForceVersions(platform: PlatformData): VersionData[] {
+  const minVer   = platform.versions.find(v => v.isMinVersion);
+  const upperVer = platform.versions.find(v => v.isDefault) ?? platform.versions.find(v => v.isLatest);
+  return platform.versions.filter(v => {
+    if (v.isFaulty) return false;
+    if (minVer   && compareVersions(v.version, minVer.version)   < 0) return false; // below min
+    if (upperVer && compareVersions(v.version, upperVer.version) > 0) return false; // above default
+    return true;
+  });
+}
+
+function getSegmentOverlap(fromSegment: string, fromUsersUpdated: number, toSegment: string): number {
   if (fromSegment === toSegment) return fromUsersUpdated;
   const fromTotal = segmentSize(fromSegment);
   const updateRatio = fromTotal > 0 ? fromUsersUpdated / fromTotal : 0;
-
-  // All Users is a superset — every other segment is fully contained within it
-  if (fromSegment === 'All Users') {
-    return Math.round(segmentSize(toSegment) * updateRatio);
-  }
-  if (toSegment === 'All Users') {
-    return fromUsersUpdated; // all updated users are a subset of All Users
-  }
-
-  const rawOverlap =
-    SEGMENT_OVERLAPS[fromSegment]?.[toSegment] ??
-    SEGMENT_OVERLAPS[toSegment]?.[fromSegment] ??
-    0;
+  if (fromSegment === 'All Users') return Math.round(segmentSize(toSegment) * updateRatio);
+  if (toSegment === 'All Users')   return fromUsersUpdated;
+  const rawOverlap = SEGMENT_OVERLAPS[fromSegment]?.[toSegment] ?? SEGMENT_OVERLAPS[toSegment]?.[fromSegment] ?? 0;
   return Math.round(rawOverlap * updateRatio);
 }
 
-/**
- * When a version completes a rollout targeting All Users (segment '' or 'All Users'),
- * it automatically becomes the platform default. This sets isDefault=true for that
- * version and isDefault=false for every other version in the same platform.
- * For segment-specific completions this should NOT be called — no default tag change.
- */
-function applyDefaultTagOnCompletion(
-  platforms: PlatformData[],
-  platformId: string,
-  versionId: string,
-): PlatformData[] {
+function applyDefaultTagOnCompletion(platforms: PlatformData[], platformId: string, versionId: string): PlatformData[] {
   return platforms.map(p =>
-    p.id !== platformId ? p : {
-      ...p,
-      versions: p.versions.map(v => ({ ...v, isDefault: v.id === versionId })),
-    }
+    p.id !== platformId ? p : { ...p, versions: p.versions.map(v => ({ ...v, isDefault: v.id === versionId })) }
   );
 }
 
-/** Sum intersecting updated users across all past rollout runs for a new target segment. */
 function getStartingUsers(targetSegment: string, history: RolloutHistory[]): number {
-  const total = history.reduce(
-    (sum, h) => sum + getSegmentOverlap(h.segment, h.usersUpdated, targetSegment),
-    0,
-  );
+  const total = history.reduce((sum, h) => sum + getSegmentOverlap(h.segment, h.usersUpdated, targetSegment), 0);
   return Math.min(total, segmentSize(targetSegment));
 }
 
-function buildRolloutFromConfig(
-  stageConfig: StageConfig[],
-  segment: string,
-  prevExpanded = true,
-): RolloutData {
+function buildRolloutFromConfig(stageConfig: StageConfig[], segment: string, prevExpanded = true): RolloutData {
   const total = segmentSize(segment);
   const last  = stageConfig[stageConfig.length - 1];
   const totalTargetUsers = Math.round(total * (last?.percent ?? 100) / 100);
   return {
-    stages: stageConfig.map((s, i) => ({
-      id: i + 1,
-      target: `${s.percent}%`,
-      users: Math.round(total * s.percent / 100),
-      time: `${s.time} hours`,
-      status: 'pending',
-      timeLeft: undefined,
-    })),
-    stageConfig: stageConfig.map(s => ({ ...s })),
-    segment,
-    startTime: '',
-    currentPercent: 0,
-    currentUsers: 0,
-    totalTargetUsers,
-    expanded: prevExpanded,
-    status: 'not_started',
+    stages: stageConfig.map((s, i) => ({ id: i + 1, target: `${s.percent}%`, users: Math.round(total * s.percent / 100), time: `${s.time} hours`, status: 'pending', timeLeft: undefined })),
+    stageConfig: stageConfig.map(s => ({ ...s })), segment, startTime: '',
+    currentPercent: 0, currentUsers: 0, totalTargetUsers, expanded: prevExpanded, status: 'not_started',
   };
 }
 
 function getActiveStageBadge(rollout: RolloutData): string {
   if (rollout.status === 'not_started') return 'Not Started';
   if (rollout.status === 'completed')   return 'Completed';
+  if (rollout.status === 'stopped')     return 'Stopped';
   const active = rollout.stages.find(s => s.status === 'active');
   if (active) return `Stage ${active.id} – ${active.target}`;
   return 'Starting…';
@@ -386,97 +342,65 @@ const LINK_META = [
 
 // ─── SegmentDropdown ──────────────────────────────────────────────────────────
 
-function SegmentDropdown({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
+function SegmentDropdownImpl({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const searchRef    = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
-      const t = setTimeout(() => searchRef.current?.focus(), 0);
+      const t = setTimeout(() => {
+        const el = document.querySelector<HTMLInputElement>('[data-segment-search]');
+        el?.focus();
+      }, 0);
       return () => clearTimeout(t);
     }
   }, [open]);
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) {
-        setOpen(false);
-        setSearch('');
+      if (!(e.target as Element).closest('[data-segment-dropdown]')) {
+        setOpen(false); setSearch('');
       }
     };
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
-  const filtered = SEGMENTS.filter(s =>
-    s.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = SEGMENTS.filter(s => s.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => { setOpen(v => !v); setSearch(''); }}
-        className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white hover:border-gray-400 transition-colors"
-      >
-        <span className={value ? 'text-slate-800' : 'text-gray-400'}>
-          {value || 'All Users (default)'}
-        </span>
+    <div data-segment-dropdown className="relative">
+      <button type="button" onClick={() => { setOpen(v => !v); setSearch(''); }}
+        className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white hover:border-gray-400 transition-colors">
+        <span className={value ? 'text-slate-800' : 'text-gray-400'}>{value || 'All Users (default)'}</span>
         <div className="flex items-center gap-1 shrink-0">
           {value && (
-            <span
-              role="button"
-              onClick={e => { e.stopPropagation(); onChange(''); }}
-              className="text-gray-400 hover:text-gray-600 rounded p-0.5 hover:bg-gray-100 transition-colors"
-            >
+            <span role="button" onClick={e => { e.stopPropagation(); onChange(''); }}
+              className="text-gray-400 hover:text-gray-600 rounded p-0.5 hover:bg-gray-100 transition-colors">
               <X size={13} />
             </span>
           )}
-          <ChevronDown
-            size={14}
-            className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
-          />
+          <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
         </div>
       </button>
       {open && (
         <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg">
           <div className="p-2 border-b border-gray-100">
-            <input
-              ref={searchRef}
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+            <input data-segment-search type="text" value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search segments…"
-              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
           <div className="max-h-44 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-gray-400">No results</div>
-            ) : filtered.map(seg => (
-              <button
-                key={seg}
-                type="button"
-                onClick={() => { onChange(seg); setOpen(false); setSearch(''); }}
-                className={`w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-blue-50 transition-colors ${
-                  value === seg ? 'text-blue-700 font-medium' : 'text-slate-700'
-                }`}
-              >
-                <span>{seg}</span>
-                <span className="text-xs text-gray-400 ml-2">
-                  {(SEGMENT_SIZES[seg] ?? 0).toLocaleString()} users
-                </span>
-                {value === seg && <Check size={13} className="text-blue-600 shrink-0 ml-1" />}
-              </button>
-            ))}
+            {filtered.length === 0
+              ? <div className="px-3 py-2 text-sm text-gray-400">No results</div>
+              : filtered.map(seg => (
+                <button key={seg} type="button" onClick={() => { onChange(seg); setOpen(false); setSearch(''); }}
+                  className={`w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-blue-50 transition-colors ${value === seg ? 'text-blue-700 font-medium' : 'text-slate-700'}`}>
+                  <span>{seg}</span>
+                  <span className="text-xs text-gray-400 ml-2">{(SEGMENT_SIZES[seg] ?? 0).toLocaleString()} users</span>
+                  {value === seg && <Check size={13} className="text-blue-600 shrink-0 ml-1" />}
+                </button>
+              ))}
           </div>
         </div>
       )}
@@ -486,64 +410,38 @@ function SegmentDropdown({
 
 // ─── StagesEditor ─────────────────────────────────────────────────────────────
 
-function StagesEditor({
-  stages,
-  onChange,
-  onAdd,
-  onDelete,
-}: {
+function StagesEditor({ stages, onChange, onAdd, onDelete }: {
   stages: StageConfig[];
   onChange: (id: number, field: 'percent' | 'time', value: number) => void;
-  onAdd: () => void;
-  onDelete: (id: number) => void;
+  onAdd: () => void; onDelete: (id: number) => void;
 }) {
   return (
     <div className="space-y-2">
       {stages.map((stage, index) => (
-        <div
-          key={stage.id}
-          className="border border-gray-200 rounded-lg p-3 bg-white flex items-center gap-3"
-        >
-          <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs border border-blue-100 shrink-0">
-            {index + 1}
-          </div>
+        <div key={stage.id} className="border border-gray-200 rounded-lg p-3 bg-white flex items-center gap-3">
+          <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs border border-blue-100 shrink-0">{index + 1}</div>
           <div className="flex-1 grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] text-gray-500 mb-1">Target %</label>
               <div className="relative">
-                <input
-                  type="number"
-                  value={stage.percent}
-                  onChange={e => onChange(stage.id, 'percent', Number(e.target.value))}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm pr-7 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <input type="number" value={stage.percent} onChange={e => onChange(stage.id, 'percent', Number(e.target.value))}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm pr-7 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                 <span className="absolute right-2 top-1.5 text-gray-400 text-xs">%</span>
               </div>
             </div>
             <div>
               <label className="block text-[10px] text-gray-500 mb-1">Wait (hours)</label>
-              <input
-                type="number"
-                value={stage.time}
-                onChange={e => onChange(stage.id, 'time', Number(e.target.value))}
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+              <input type="number" value={stage.time} onChange={e => onChange(stage.id, 'time', Number(e.target.value))}
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onDelete(stage.id)}
-            className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"
-          >
+          <button type="button" onClick={() => onDelete(stage.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors">
             <Trash2 size={14} />
           </button>
         </div>
       ))}
-      <button
-        type="button"
-        onClick={onAdd}
-        className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-700 hover:border-gray-400 transition-all flex items-center justify-center gap-1.5 text-sm font-medium"
-      >
+      <button type="button" onClick={onAdd}
+        className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-700 hover:border-gray-400 transition-all flex items-center justify-center gap-1.5 text-sm font-medium">
         <Plus size={14} /> Add Stage
       </button>
     </div>
@@ -558,56 +456,55 @@ export default function AppVersionConfig() {
   const [showGlobalConfigModal, setShowGlobalConfigModal] = useState(false);
   const [showRerunConfirm, setShowRerunConfirm] = useState(false);
 
+  // Stop Release
+  const [stopReleaseTarget, setStopReleaseTarget] = useState<{ platformId: string; versionId: string } | null>(null);
+
+  // More menu
+  const [openMoreMenu, setOpenMoreMenu] = useState<string | null>(null);
+
+  // Force Update Version
+  const [showForceUpdateDialog, setShowForceUpdateDialog] = useState(false);
+  const [forceUpdateSelections, setForceUpdateSelections] = useState<Record<string, string>>({});
+
   // Add modal
   const [addModal, setAddModal] = useState<{ platformId: string } | null>(null);
   const [addForm, setAddForm] = useState({
-    version: '',
-    downloadLinks: ['', '', '', ''],
-    changelogZh: '',
-    changelogEn: '',
-    autoTranslate: false,
-    useGlobalRollout: true,
-    localStages: [] as StageConfig[],
-    segment: '',
+    version: '', downloadLinks: ['', '', '', ''], changelogZh: '', changelogEn: '',
+    autoTranslate: false, useGlobalRollout: true, localStages: [] as StageConfig[], segment: '',
   });
 
   // Edit modal
   const [editModal, setEditModal] = useState<{ platformId: string; versionId: string } | null>(null);
   const [editStagesExpanded, setEditStagesExpanded] = useState(false);
   const [editForm, setEditForm] = useState({
-    version: '',
-    downloadLinks: ['', '', '', ''],
-    changelogZh: '',
-    changelogEn: '',
-    autoTranslate: false,
-    setAsDefault: false,
-    setAsMin: false,
-    rolloutStages: [] as StageConfig[],
-    rolloutSegment: '',
-    rolloutModified: false,
-    editUseGlobal: false,
+    version: '', downloadLinks: ['', '', '', ''], changelogZh: '', changelogEn: '',
+    autoTranslate: false, setAsDefault: false, setAsMin: false,
+    rolloutStages: [] as StageConfig[], rolloutSegment: '', rolloutModified: false, editUseGlobal: false,
   });
 
+  // Close more menu on outside click
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (!(e.target as Element).closest('[data-more-menu]')) setOpenMoreMenu(null);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
   // ── Derived ──
-  const addingPlatform   = addModal  ? platforms.find(p => p.id === addModal.platformId)  : null;
-  const editingPlatform  = editModal ? platforms.find(p => p.id === editModal.platformId) : null;
-  const editingVersion   = editModal
-    ? editingPlatform?.versions.find(v => v.id === editModal.versionId)
-    : null;
+  const addingPlatform  = addModal  ? platforms.find(p => p.id === addModal.platformId)  : null;
+  const editingPlatform = editModal ? platforms.find(p => p.id === editModal.platformId) : null;
+  const editingVersion  = editModal ? editingPlatform?.versions.find(v => v.id === editModal.versionId) : null;
 
   // ── Platform/rollout toggles ──
   const togglePlatform = (id: string) =>
-    setPlatforms(prev => prev.map(p =>
-      p.id === id ? { ...p, expanded: !p.expanded } : p
-    ));
+    setPlatforms(prev => prev.map(p => p.id === id ? { ...p, expanded: !p.expanded } : p));
 
   const toggleRollout = (platformId: string, versionId: string) =>
     setPlatforms(prev => prev.map(p =>
       p.id !== platformId ? p : {
-        ...p,
-        versions: p.versions.map(v =>
-          v.id !== versionId || !v.rollout ? v
-            : { ...v, rollout: { ...v.rollout, expanded: !v.rollout.expanded } }
+        ...p, versions: p.versions.map(v =>
+          v.id !== versionId || !v.rollout ? v : { ...v, rollout: { ...v.rollout, expanded: !v.rollout.expanded } }
         ),
       }
     ));
@@ -616,40 +513,66 @@ export default function AppVersionConfig() {
   const handleStartRollout = (platformId: string, versionId: string) =>
     setPlatforms(prev => prev.map(p =>
       p.id !== platformId ? p : {
-        ...p,
-        versions: p.versions.map(v => {
+        ...p, versions: p.versions.map(v => {
           if (v.id !== versionId || !v.rollout) return v;
           const cfg = v.rollout.stageConfig;
-          return {
-            ...v,
-            rollout: {
-              ...v.rollout,
-              status: 'in_progress' as RolloutStatus,
-              startTime: new Date().toISOString().replace('T', ' ').substring(0, 19),
-              stages: v.rollout.stages.map((s, i) =>
-                i === 0
-                  ? { ...s, status: 'active' as const, timeLeft: `${cfg[0]?.time ?? 0}h 0m left` }
-                  : s
-              ),
-            },
-          };
+          return { ...v, rollout: { ...v.rollout, status: 'in_progress' as RolloutStatus, startTime: new Date().toISOString().replace('T', ' ').substring(0, 19), stages: v.rollout.stages.map((s, i) => i === 0 ? { ...s, status: 'active' as const, timeLeft: `${cfg[0]?.time ?? 0}h 0m left` } : s) } };
         }),
       }
     ));
 
+  // ── Stop release ──
+  const handleStopRelease = (platformId: string, versionId: string) => {
+    setPlatforms(prev => prev.map(p => {
+      if (p.id !== platformId) return p;
+      const defaultVer = p.versions.find(v => v.isDefault && v.id !== versionId);
+      return {
+        ...p, versions: p.versions.map(v => {
+          if (v.id === versionId) return { ...v, isLatest: false, rollout: v.rollout ? { ...v.rollout, status: 'stopped' as RolloutStatus } : v.rollout };
+          if (defaultVer && v.id === defaultVer.id) return { ...v, isLatest: true };
+          return v;
+        }),
+      };
+    }));
+    setStopReleaseTarget(null);
+  };
+
+  // ── More menu tag actions ──
+  const handleSetDefault = (platformId: string, versionId: string) => {
+    setPlatforms(prev => prev.map(p =>
+      p.id !== platformId ? p : { ...p, versions: p.versions.map(v => ({ ...v, isDefault: v.id === versionId })) }
+    ));
+    setOpenMoreMenu(null);
+  };
+  const handleSetMinVersion = (platformId: string, versionId: string) => {
+    setPlatforms(prev => prev.map(p =>
+      p.id !== platformId ? p : { ...p, versions: p.versions.map(v => ({ ...v, isMinVersion: v.id === versionId })) }
+    ));
+    setOpenMoreMenu(null);
+  };
+  const handleToggleFaulty = (platformId: string, versionId: string) => {
+    setPlatforms(prev => prev.map(p =>
+      p.id !== platformId ? p : { ...p, versions: p.versions.map(v => v.id !== versionId ? v : { ...v, isFaulty: !v.isFaulty }) }
+    ));
+    setOpenMoreMenu(null);
+  };
+
+  // ── Force update ──
+  const openForceUpdateDialog = () => {
+    const init: Record<string, string> = {};
+    platforms.forEach(p => { init[p.id] = p.forceUpdateVersion ?? ''; });
+    setForceUpdateSelections(init);
+    setShowForceUpdateDialog(true);
+  };
+  const handleSaveForceUpdate = () => {
+    setPlatforms(prev => prev.map(p => ({ ...p, forceUpdateVersion: forceUpdateSelections[p.id] || null })));
+    setShowForceUpdateDialog(false);
+  };
+
   // ── Open modals ──
   const openAddModal = (platformId: string) => {
     setAddModal({ platformId });
-    setAddForm({
-      version: '',
-      downloadLinks: ['', '', '', ''],
-      changelogZh: '',
-      changelogEn: '',
-      autoTranslate: false,
-      useGlobalRollout: true,
-      localStages: globalStages.map(s => ({ ...s })),
-      segment: '',
-    });
+    setAddForm({ version: '', downloadLinks: ['', '', '', ''], changelogZh: '', changelogEn: '', autoTranslate: false, useGlobalRollout: true, localStages: globalStages.map(s => ({ ...s })), segment: '' });
   };
 
   const openEditModal = (platformId: string, versionId: string) => {
@@ -659,68 +582,45 @@ export default function AppVersionConfig() {
     setEditModal({ platformId, versionId });
     setEditStagesExpanded(false);
     setEditForm({
-      version: version.version,
-      downloadLinks: [...version.downloadLinks],
-      changelogZh: version.changelogZh,
-      changelogEn: version.changelogEn,
-      autoTranslate: false,
-      setAsDefault: version.isDefault,
-      setAsMin: version.isMinVersion,
+      version: version.version, downloadLinks: [...version.downloadLinks],
+      changelogZh: version.changelogZh, changelogEn: version.changelogEn,
+      autoTranslate: false, setAsDefault: version.isDefault, setAsMin: version.isMinVersion,
       rolloutStages: version.rollout?.stageConfig.map(s => ({ ...s })) ?? globalStages.map(s => ({ ...s })),
       rolloutSegment: version.rollout?.segment === 'All Users' ? '' : (version.rollout?.segment ?? ''),
-      rolloutModified: false,
-      editUseGlobal: false,
+      rolloutModified: false, editUseGlobal: false,
     });
   };
 
-  // ── Add form stage helpers ──
-  const updateAddStage  = (id: number, f: 'percent' | 'time', v: number) =>
-    setAddForm(a => ({ ...a, localStages: a.localStages.map(s => s.id === id ? { ...s, [f]: v } : s) }));
-  const addAddStage     = () =>
-    setAddForm(a => ({ ...a, localStages: [...a.localStages, { id: Date.now(), percent: 0, time: 6 }] }));
-  const deleteAddStage  = (id: number) =>
-    setAddForm(a => ({ ...a, localStages: a.localStages.filter(s => s.id !== id) }));
+  // ── Add form helpers ──
+  const updateAddStage = (id: number, f: 'percent' | 'time', v: number) => setAddForm(a => ({ ...a, localStages: a.localStages.map(s => s.id === id ? { ...s, [f]: v } : s) }));
+  const addAddStage    = () => setAddForm(a => ({ ...a, localStages: [...a.localStages, { id: Date.now(), percent: 0, time: 6 }] }));
+  const deleteAddStage = (id: number) => setAddForm(a => ({ ...a, localStages: a.localStages.filter(s => s.id !== id) }));
 
-  // ── Edit form rollout helpers ──
-  const updateEditStage = (id: number, f: 'percent' | 'time', v: number) =>
-    setEditForm(e => ({ ...e, rolloutStages: e.rolloutStages.map(s => s.id === id ? { ...s, [f]: v } : s), rolloutModified: true }));
-  const addEditStage    = () =>
-    setEditForm(e => ({ ...e, rolloutStages: [...e.rolloutStages, { id: Date.now(), percent: 0, time: 6 }], rolloutModified: true }));
-  const deleteEditStage = (id: number) =>
-    setEditForm(e => ({ ...e, rolloutStages: e.rolloutStages.filter(s => s.id !== id), rolloutModified: true }));
+  // ── Edit form helpers ──
+  const updateEditStage = (id: number, f: 'percent' | 'time', v: number) => setEditForm(e => ({ ...e, rolloutStages: e.rolloutStages.map(s => s.id === id ? { ...s, [f]: v } : s), rolloutModified: true }));
+  const addEditStage    = () => setEditForm(e => ({ ...e, rolloutStages: [...e.rolloutStages, { id: Date.now(), percent: 0, time: 6 }], rolloutModified: true }));
+  const deleteEditStage = (id: number) => setEditForm(e => ({ ...e, rolloutStages: e.rolloutStages.filter(s => s.id !== id), rolloutModified: true }));
 
   // ── Global config helpers ──
-  const updateGlobalStage  = (id: number, f: 'percent' | 'time', v: string) =>
-    setGlobalStages(prev => prev.map(s => s.id === id ? { ...s, [f]: Number(v) } : s));
-  const addGlobalStage     = () =>
-    setGlobalStages(prev => [...prev, { id: Date.now(), percent: 0, time: 6 }]);
-  const deleteGlobalStage  = (id: number) =>
-    setGlobalStages(prev => prev.filter(s => s.id !== id));
+  const updateGlobalStage = (id: number, f: 'percent' | 'time', v: string) => setGlobalStages(prev => prev.map(s => s.id === id ? { ...s, [f]: Number(v) } : s));
+  const addGlobalStage    = () => setGlobalStages(prev => [...prev, { id: Date.now(), percent: 0, time: 6 }]);
+  const deleteGlobalStage = (id: number) => setGlobalStages(prev => prev.filter(s => s.id !== id));
 
   // ── Save handlers ──
   const handleSaveAdd = () => {
     if (!addModal) return;
     const stageConfig = addForm.useGlobalRollout ? globalStages : addForm.localStages;
-    const seg         = addForm.segment || 'All Users';
+    const seg = addForm.segment || 'All Users';
     const newVersion: VersionData = {
       id: `${addModal.platformId}-${addForm.version}-${Date.now()}`,
-      version: addForm.version,
-      downloadLinks: [...addForm.downloadLinks],
-      changelogZh: addForm.changelogZh,
-      changelogEn: addForm.changelogEn,
-      isLatest: true,
-      isDefault: false,
-      isMinVersion: false,
+      version: addForm.version, downloadLinks: [...addForm.downloadLinks],
+      changelogZh: addForm.changelogZh, changelogEn: addForm.changelogEn,
+      isLatest: true, isDefault: false, isMinVersion: false, isFaulty: false,
       updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      rolloutHistory: [],
-      rollout: buildRolloutFromConfig(stageConfig, seg),
+      rolloutHistory: [], rollout: buildRolloutFromConfig(stageConfig, seg),
     };
     setPlatforms(prev => prev.map(p =>
-      p.id !== addModal.platformId ? p : {
-        ...p,
-        dotColor: 'bg-green-500',
-        versions: [newVersion, ...p.versions.map(v => ({ ...v, isLatest: false }))],
-      }
+      p.id !== addModal.platformId ? p : { ...p, dotColor: 'bg-green-500', versions: [newVersion, ...p.versions.map(v => ({ ...v, isLatest: false }))] }
     ));
     setAddModal(null);
   };
@@ -729,16 +629,11 @@ export default function AppVersionConfig() {
     if (!editModal) return;
     setPlatforms(prev => prev.map(p =>
       p.id !== editModal.platformId ? p : {
-        ...p,
-        versions: p.versions.map(v =>
+        ...p, versions: p.versions.map(v =>
           v.id !== editModal.versionId ? v : {
-            ...v,
-            version: editForm.version,
-            downloadLinks: [...editForm.downloadLinks],
-            changelogZh: editForm.changelogZh,
-            changelogEn: editForm.changelogEn,
-            isDefault: editForm.setAsDefault,
-            isMinVersion: editForm.setAsMin,
+            ...v, version: editForm.version, downloadLinks: [...editForm.downloadLinks],
+            changelogZh: editForm.changelogZh, changelogEn: editForm.changelogEn,
+            isDefault: editForm.setAsDefault, isMinVersion: editForm.setAsMin,
           }
         ),
       }
@@ -746,86 +641,31 @@ export default function AppVersionConfig() {
     setEditModal(null);
   };
 
-  // Rerun: archives current completed rollout to history, pre-calculates intersecting
-  // users for the new segment, then sets status to not_started so the admin must
-  // press Start (same flow as a newly added version).
-  // Side-effect: if the archived (completed) rollout targeted All Users, the version
-  // automatically earns the platform default tag at that moment of completion.
   const handleRerunRollout = () => {
     if (!editModal) return;
-
-    // Read completed rollout segment BEFORE mutating state
-    const prevVersion = platforms
-      .find(p => p.id === editModal.platformId)
-      ?.versions.find(v => v.id === editModal.versionId);
-    const completedSeg = prevVersion?.rollout?.status === 'completed'
-      ? prevVersion.rollout.segment
-      : null;
-    const completionEarnsDefault =
-      completedSeg === '' || completedSeg === 'All Users';
+    const prevVersion = platforms.find(p => p.id === editModal.platformId)?.versions.find(v => v.id === editModal.versionId);
+    const completedSeg = prevVersion?.rollout?.status === 'completed' ? prevVersion.rollout.segment : null;
+    const completionEarnsDefault = completedSeg === '' || completedSeg === 'All Users';
 
     setPlatforms(prev => {
       let next = prev.map(p =>
         p.id !== editModal.platformId ? p : {
-          ...p,
-          versions: p.versions.map(v => {
-          if (v.id !== editModal.versionId) return v;
-          const cfg = editForm.editUseGlobal ? globalStages : editForm.rolloutStages;
-          const seg = editForm.rolloutSegment || 'All Users';
-
-          // Archive the completed run into history
-          const newHistory: RolloutHistory[] = [
-            ...v.rolloutHistory,
-            ...(v.rollout?.status === 'completed' ? [{
-              segment: v.rollout.segment,
-              usersUpdated: v.rollout.currentUsers,
-              completedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-            }] : []),
-          ];
-
-          // How many users in the new segment already have this update from prior runs
-          const startingUsers = getStartingUsers(seg, newHistory);
-
-          const total = segmentSize(seg);
-          const last  = cfg[cfg.length - 1];
-          const totalTargetUsers = Math.round(total * (last?.percent ?? 100) / 100);
-          const startingPercent  = totalTargetUsers > 0
-            ? Math.round((startingUsers / totalTargetUsers) * 1000) / 10
-            : 0;
-
-          const stages: RolloutStageDisplay[] = cfg.map((s, i) => ({
-            id: i + 1,
-            target: `${s.percent}%`,
-            users: Math.round(total * s.percent / 100),
-            time: `${s.time} hours`,
-            status: 'pending',
-            timeLeft: undefined,
-          }));
-
-          return {
-            ...v,
-            rolloutHistory: newHistory,
-            rollout: {
-              stages,
-              stageConfig: cfg.map(s => ({ ...s })),
-              segment: seg,
-              startTime: '',
-              currentPercent: startingPercent,
-              currentUsers: startingUsers,
-              totalTargetUsers,
-              expanded: true, // always expand so Start button is immediately visible
-              status: 'not_started' as RolloutStatus,
-            },
-          };
-        }),
-      }
-    );
-
-      // If the completed rollout targeted All Users, award the default tag now
-      if (completionEarnsDefault) {
-        next = applyDefaultTagOnCompletion(next, editModal.platformId, editModal.versionId);
-      }
-
+          ...p, versions: p.versions.map(v => {
+            if (v.id !== editModal.versionId) return v;
+            const cfg = editForm.editUseGlobal ? globalStages : editForm.rolloutStages;
+            const seg = editForm.rolloutSegment || 'All Users';
+            const newHistory: RolloutHistory[] = [...v.rolloutHistory, ...(v.rollout?.status === 'completed' ? [{ segment: v.rollout.segment, usersUpdated: v.rollout.currentUsers, completedAt: new Date().toISOString().replace('T', ' ').substring(0, 19) }] : [])];
+            const startingUsers = getStartingUsers(seg, newHistory);
+            const total = segmentSize(seg);
+            const last  = cfg[cfg.length - 1];
+            const totalTargetUsers = Math.round(total * (last?.percent ?? 100) / 100);
+            const startingPercent  = totalTargetUsers > 0 ? Math.round((startingUsers / totalTargetUsers) * 1000) / 10 : 0;
+            const stages: RolloutStageDisplay[] = cfg.map((s, i) => ({ id: i + 1, target: `${s.percent}%`, users: Math.round(total * s.percent / 100), time: `${s.time} hours`, status: 'pending', timeLeft: undefined }));
+            return { ...v, rolloutHistory: newHistory, rollout: { stages, stageConfig: cfg.map(s => ({ ...s })), segment: seg, startTime: '', currentPercent: startingPercent, currentUsers: startingUsers, totalTargetUsers, expanded: true, status: 'not_started' as RolloutStatus } };
+          }),
+        }
+      );
+      if (completionEarnsDefault) next = applyDefaultTagOnCompletion(next, editModal.platformId, editModal.versionId);
       return next;
     });
     setEditModal(null);
@@ -839,7 +679,33 @@ export default function AppVersionConfig() {
     const r = version.rollout;
     if (!r) return null;
 
-    // ── COMPLETED: minimal, no expand/collapse ──
+    // ── STOPPED ──
+    if (r.status === 'stopped') {
+      return (
+        <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+          <div className="p-3 bg-gray-50">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <div className="text-gray-400"><Settings size={15} /></div>
+              <span>Gradual Rollout</span>
+              <span className="bg-gray-200 text-gray-500 px-2 py-0.5 rounded text-xs font-semibold">Stopped</span>
+              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
+            </div>
+            <div className="mt-3">
+              <div className="flex justify-between text-xs font-medium mb-1">
+                <span className="text-gray-500">Update Status at Stop</span>
+                <span className="text-gray-500">{r.currentPercent}%</span>
+              </div>
+              <p className="text-xs text-gray-400 mb-2">{r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users had updated</p>
+              <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
+                <div className="bg-gray-400 h-full transition-all" style={{ width: `${r.currentPercent}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── COMPLETED ──
     if (r.status === 'completed') {
       return (
         <div className="border border-green-200 rounded-lg bg-white overflow-hidden">
@@ -847,20 +713,14 @@ export default function AppVersionConfig() {
             <div className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-3">
               <div className="text-green-600"><Check size={16} /></div>
               <span>Gradual Rollout</span>
-              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-semibold">
-                Completed
-              </span>
-              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">
-                {r.segment || 'All Users'}
-              </span>
+              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-semibold">Completed</span>
+              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
             </div>
             <div className="flex justify-between text-xs font-medium mb-1">
               <span className="text-slate-700">Current Update Status</span>
               <span className="text-green-700">100%</span>
             </div>
-            <p className="text-xs text-gray-500 mb-2">
-              {r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users have updated
-            </p>
+            <p className="text-xs text-gray-500 mb-2">{r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users have updated</p>
             <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
               <div className="bg-green-500 h-full w-full" />
             </div>
@@ -869,70 +729,46 @@ export default function AppVersionConfig() {
       );
     }
 
-    // ── NOT STARTED: collapsible, Start button on stage 1 ──
+    // ── NOT STARTED ──
     if (r.status === 'not_started') {
       return (
         <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-          <div
-            className="bg-gray-50 p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-            onClick={() => toggleRollout(platformId, version.id)}
-          >
+          <div className="bg-gray-50 p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => toggleRollout(platformId, version.id)}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-800 flex-wrap">
                 <div className="text-slate-400"><Settings size={16} /></div>
                 <span>Gradual Rollout</span>
-                <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded text-xs font-semibold">
-                  Not Started
-                </span>
-                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">
-                  {r.segment}
-                </span>
+                <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded text-xs font-semibold">Not Started</span>
+                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
               </div>
-              <ChevronDown
-                size={16}
-                className={`text-gray-400 transition-transform shrink-0 ${r.expanded ? '' : '-rotate-90'}`}
-              />
+              <ChevronDown size={16} className={`text-gray-400 transition-transform shrink-0 ${r.expanded ? '' : '-rotate-90'}`} />
             </div>
           </div>
-
           {r.expanded && (
             <>
               <div className="p-3 bg-white">
                 {r.stages.map((stage, i) => (
-                  <div
-                    key={stage.id}
-                    className="flex items-center py-2 px-2 mb-2 rounded-lg border border-transparent hover:bg-gray-50"
-                  >
-                    <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-xs font-bold mr-3 shrink-0">
-                      {stage.id}
-                    </div>
+                  <div key={stage.id} className="flex items-center py-2 px-2 mb-2 rounded-lg border border-transparent hover:bg-gray-50">
+                    <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-xs font-bold mr-3 shrink-0">{stage.id}</div>
                     <div className="flex-1">
                       <div className="text-sm font-bold text-slate-700 mb-0.5">Stage {stage.id}</div>
-                      <div className="text-xs text-gray-500">
-                        Target: <span className="font-medium text-slate-700">{stage.target}</span>
-                        <span className="opacity-70"> (approx. {stage.users.toLocaleString()} users)</span>
-                      </div>
+                      <div className="text-xs text-gray-500">Target: <span className="font-medium text-slate-700">{stage.target}</span><span className="opacity-70"> (approx. {stage.users.toLocaleString()} users)</span></div>
                     </div>
                     <div className="text-right shrink-0">
                       {i === 0 ? (
-                        <button
-                          onClick={e => { e.stopPropagation(); handleStartRollout(platformId, version.id); }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-md hover:bg-green-700 transition-colors"
-                        >
+                        <button onClick={e => { e.stopPropagation(); handleStartRollout(platformId, version.id); }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-md hover:bg-green-700 transition-colors">
                           <Play size={11} /> Start Rollout
                         </button>
-                      ) : (
-                        <span className="text-[10px] text-gray-400">Pending</span>
-                      )}
+                      ) : <span className="text-[10px] text-gray-400">Pending</span>}
                     </div>
                   </div>
                 ))}
               </div>
               <div className="p-3 bg-white border-t border-gray-100 flex justify-between items-center">
                 <span className="text-xs text-gray-400">Rollout has not started yet</span>
-                <button className="text-xs text-red-500 flex items-center gap-1 hover:underline">
-                  <Trash2 size={12} /> Delete Release
-                </button>
+                <button onClick={e => { e.stopPropagation(); setStopReleaseTarget({ platformId, versionId: version.id }); }}
+                  className="text-xs text-red-500 flex items-center gap-1 hover:underline"><Trash2 size={12} /> Stop Release</button>
               </div>
             </>
           )}
@@ -940,49 +776,32 @@ export default function AppVersionConfig() {
       );
     }
 
-    // ── IN PROGRESS: collapsible, stage breakdown ──
+    // ── IN PROGRESS ──
     return (
       <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
-        <div
-          className="bg-gray-50 p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-          onClick={() => toggleRollout(platformId, version.id)}
-        >
+        <div className="bg-gray-50 p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => toggleRollout(platformId, version.id)}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-medium text-slate-800 flex-wrap">
               <div className="text-blue-600"><Settings size={16} /></div>
               <span>Gradual Rollout Progress</span>
-              <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">
-                {getActiveStageBadge(r)}
-              </span>
-              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">
-                {r.segment || 'All Users'}
-              </span>
+              <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{getActiveStageBadge(r)}</span>
+              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
             </div>
-            <ChevronDown
-              size={16}
-              className={`text-gray-400 transition-transform shrink-0 ${r.expanded ? '' : '-rotate-90'}`}
-            />
+            <ChevronDown size={16} className={`text-gray-400 transition-transform shrink-0 ${r.expanded ? '' : '-rotate-90'}`} />
           </div>
-
           {r.expanded && (
             <>
               <div className="mt-4 mb-2 flex justify-between text-xs font-medium">
                 <span className="text-slate-700">Current Update Status</span>
                 <span className="text-slate-700">{r.currentPercent}%</span>
               </div>
-              <p className="text-xs text-gray-500 mb-2">
-                {r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users have updated
-              </p>
+              <p className="text-xs text-gray-500 mb-2">{r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users have updated</p>
               <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-slate-500 h-full transition-all"
-                  style={{ width: `${r.currentPercent}%` }}
-                />
+                <div className="bg-slate-500 h-full transition-all" style={{ width: `${r.currentPercent}%` }} />
               </div>
             </>
           )}
         </div>
-
         {r.expanded && (
           <>
             <div className="p-3 bg-white">
@@ -990,49 +809,19 @@ export default function AppVersionConfig() {
                 const isActive    = stage.status === 'active';
                 const isCompleted = stage.status === 'completed';
                 return (
-                  <div
-                    key={stage.id}
-                    className={`flex items-center py-2 px-2 mb-2 rounded-lg transition-all ${
-                      isActive
-                        ? 'bg-gray-100 border border-gray-300 shadow-sm'
-                        : 'border border-transparent hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mr-3 shrink-0 ${
-                      isCompleted ? 'bg-green-100 text-green-700'
-                        : isActive  ? 'bg-slate-800 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      {stage.id}
-                    </div>
+                  <div key={stage.id} className={`flex items-center py-2 px-2 mb-2 rounded-lg transition-all ${isActive ? 'bg-gray-100 border border-gray-300 shadow-sm' : 'border border-transparent hover:bg-gray-50'}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mr-3 shrink-0 ${isCompleted ? 'bg-green-100 text-green-700' : isActive ? 'bg-slate-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}>{stage.id}</div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className={`text-sm font-bold ${isActive ? 'text-slate-900' : 'text-slate-700'}`}>
-                          Stage {stage.id}
-                        </span>
-                        {isActive && (
-                          <span className="bg-white border border-gray-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
-                            Current Stage
-                          </span>
-                        )}
+                        <span className={`text-sm font-bold ${isActive ? 'text-slate-900' : 'text-slate-700'}`}>Stage {stage.id}</span>
+                        {isActive && <span className="bg-white border border-gray-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">Current Stage</span>}
                       </div>
-                      <div className="text-xs text-gray-500">
-                        Target: <span className="font-medium text-slate-700">{stage.target}</span>
-                        <span className="opacity-70"> (approx. {stage.users.toLocaleString()} users)</span>
-                      </div>
+                      <div className="text-xs text-gray-500">Target: <span className="font-medium text-slate-700">{stage.target}</span><span className="opacity-70"> (approx. {stage.users.toLocaleString()} users)</span></div>
                     </div>
                     <div className="text-right shrink-0">
-                      {isActive ? (
-                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                          <Clock size={12} /> {stage.timeLeft}
-                        </span>
-                      ) : isCompleted ? (
-                        <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded">
-                          Completed
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-gray-400">Pending</span>
-                      )}
+                      {isActive ? <span className="text-xs font-bold text-slate-700 flex items-center gap-1"><Clock size={12} /> {stage.timeLeft}</span>
+                        : isCompleted ? <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded">Completed</span>
+                        : <span className="text-[10px] text-gray-400">Pending</span>}
                     </div>
                   </div>
                 );
@@ -1040,9 +829,8 @@ export default function AppVersionConfig() {
             </div>
             <div className="p-3 bg-white border-t border-gray-100 flex justify-between items-center">
               <span className="text-xs text-gray-400">Start time: {r.startTime}</span>
-              <button className="text-xs text-red-500 flex items-center gap-1 hover:underline">
-                <Trash2 size={12} /> Delete Release
-              </button>
+              <button onClick={e => { e.stopPropagation(); setStopReleaseTarget({ platformId, versionId: version.id }); }}
+                className="text-xs text-red-500 flex items-center gap-1 hover:underline"><Trash2 size={12} /> Stop Release</button>
             </div>
           </>
         )}
@@ -1060,12 +848,16 @@ export default function AppVersionConfig() {
       {/* Page Header */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl md:text-2xl font-bold text-slate-900">App Version Configuration</h1>
-        <button
-          onClick={() => setShowGlobalConfigModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 text-slate-600 shadow-sm transition-all"
-        >
-          <Settings size={16} /> Global Rollout Config
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={openForceUpdateDialog}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 text-slate-600 shadow-sm transition-all">
+            <ShieldAlert size={16} /> Force Update Version
+          </button>
+          <button onClick={() => setShowGlobalConfigModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 text-slate-600 shadow-sm transition-all">
+            <Settings size={16} /> Global Rollout Config
+          </button>
+        </div>
       </div>
 
       {/* Platform list */}
@@ -1076,89 +868,77 @@ export default function AppVersionConfig() {
           const displayVer = defaultVer ?? latestVer;
 
           return (
-            <div key={platform.id} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-
-              {/* Platform header */}
-              <div
-                className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 transition-colors"
-                onClick={() => togglePlatform(platform.id)}
-              >
+            <div key={platform.id} className="bg-white rounded-lg shadow-sm border border-gray-100">
+              <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 transition-colors" onClick={() => togglePlatform(platform.id)}>
                 <div className="flex items-center gap-4">
-                  {platform.expanded
-                    ? <ChevronDown className="text-gray-600" size={20} />
-                    : <ChevronRight className="text-gray-400" size={20} />}
+                  {platform.expanded ? <ChevronDown className="text-gray-600" size={20} /> : <ChevronRight className="text-gray-400" size={20} />}
                   <div className={`w-2.5 h-2.5 rounded-full ${platform.dotColor}`} />
                   <span className="font-bold text-lg">{platform.name}</span>
-                  <span className="text-gray-400 text-sm">
-                    {platform.versions.length === 0
-                      ? 'No default version'
-                      : `v${displayVer?.version ?? ''}`}
-                  </span>
+                  <span className="text-gray-400 text-sm">{platform.versions.length === 0 ? 'No default version' : `v${displayVer?.version ?? ''}`}</span>
                 </div>
-                <button
-                  onClick={e => { e.stopPropagation(); openAddModal(platform.id); }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
-                >
+                <button onClick={e => { e.stopPropagation(); openAddModal(platform.id); }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
                   <Plus size={16} /> Add Version
                 </button>
               </div>
 
-              {/* Expanded versions */}
               {platform.expanded && (
                 <div className="px-4 md:px-6 pb-4 md:pb-6 pt-2 border-t border-gray-50 space-y-3">
                   {platform.versions.length === 0 ? (
-                    <p className="text-sm text-gray-400 py-6 text-center">
-                      No versions yet. Click "Add Version" to get started.
-                    </p>
+                    <p className="text-sm text-gray-400 py-6 text-center">No versions yet. Click "Add Version" to get started.</p>
                   ) : (
                     platform.versions.map(version => (
-                      <div
-                        key={version.id}
-                        className={`border rounded-lg p-3 md:p-5 ${
-                          version.isLatest ? 'border-blue-200 bg-blue-50/10' : 'border-gray-200 bg-green-50/30'
-                        }`}
-                      >
-                        {/* Version header row */}
+                      <div key={version.id}
+                        className={`border rounded-lg p-3 md:p-5 bg-white ${
+                          version.isFaulty ? 'border-red-200'
+                            : version.isLatest ? 'border-blue-200'
+                            : 'border-gray-200'
+                        }`}>
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-lg text-slate-800">v{version.version}</span>
-                            {version.isLatest && (
-                              <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">
-                                Latest Version
-                              </span>
-                            )}
-                            {version.isDefault && (
-                              <span className="bg-black text-white text-xs px-2 py-0.5 rounded-full">
-                                Default Version
-                              </span>
-                            )}
-                            {version.isMinVersion && (
-                              <span className="bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">
-                                Min Version
-                              </span>
-                            )}
+                            {version.isLatest && <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">Latest Version</span>}
+                            {version.isDefault && <span className="bg-black text-white text-xs px-2 py-0.5 rounded-full">Default Version</span>}
+                            {version.isMinVersion && <span className="bg-gray-400 text-white text-xs px-2 py-0.5 rounded-full">Min Version</span>}
+                            {version.isFaulty && <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full font-semibold">Faulty</span>}
                           </div>
-                          <div className="flex gap-2 text-gray-400 shrink-0">
-                            <MoreHorizontal size={20} className="cursor-pointer hover:text-gray-600" />
-                            <button
-                              onClick={() => openEditModal(platform.id, version.id)}
-                              className="hover:text-blue-600 transition-colors"
-                            >
+                          {/* Action icons */}
+                          <div className="flex gap-2 text-gray-400 shrink-0 items-center">
+                            {/* More menu */}
+                            <div className="relative" data-more-menu>
+                              <button onClick={e => { e.stopPropagation(); setOpenMoreMenu(openMoreMenu === version.id ? null : version.id); }}
+                                className="hover:text-gray-600 transition-colors p-0.5 rounded hover:bg-gray-100">
+                                <MoreHorizontal size={20} />
+                              </button>
+                              {openMoreMenu === version.id && (
+                                <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-xl w-48 py-1">
+                                  <button onClick={() => handleSetDefault(platform.id, version.id)}
+                                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-50 text-slate-700 flex items-center gap-2">
+                                    Set as Default
+                                  </button>
+                                  <button onClick={() => handleSetMinVersion(platform.id, version.id)}
+                                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-50 text-slate-700 flex items-center gap-2">
+                                    Set as Minimum
+                                  </button>
+                                  <div className="border-t border-gray-100 my-1" />
+                                  <button onClick={() => handleToggleFaulty(platform.id, version.id)}
+                                    className={`w-full px-4 py-2 text-sm text-left hover:bg-gray-50 flex items-center gap-2 ${version.isFaulty ? 'text-gray-600' : 'text-red-600'}`}>
+                                    {version.isFaulty ? 'Remove Faulty Tag' : 'Mark as Faulty'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <button onClick={() => openEditModal(platform.id, version.id)} className="hover:text-blue-600 transition-colors">
                               <Edit2 size={18} />
                             </button>
                           </div>
                         </div>
 
                         <p className="text-xs text-gray-500 mb-3">Updated: {version.updatedAt}</p>
-
                         <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
                           <Copy size={14} className="shrink-0" />
-                          <span className="truncate">
-                            {version.downloadLinks[0] || 'No download link'}
-                          </span>
-                          {version.downloadLinks[0] && (
-                            <Copy size={14} className="cursor-pointer hover:text-blue-500 shrink-0" />
-                          )}
+                          <span className="truncate">{version.downloadLinks[0] || 'No download link'}</span>
+                          {version.downloadLinks[0] && <Copy size={14} className="cursor-pointer hover:text-blue-500 shrink-0" />}
                         </div>
 
                         {renderRolloutBox(platform.id, version)}
@@ -1178,182 +958,86 @@ export default function AppVersionConfig() {
       {addModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg w-full max-w-2xl my-8 shadow-2xl flex flex-col max-h-[90vh]">
-
             <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex justify-between items-center rounded-t-lg">
-              <h2 className="text-lg font-bold text-slate-800">
-                Add New {addingPlatform?.name} App Version
-              </h2>
-              <button onClick={() => setAddModal(null)} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
+              <h2 className="text-lg font-bold text-slate-800">Add New {addingPlatform?.name} App Version</h2>
+              <button onClick={() => setAddModal(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
-
             <div className="p-6 space-y-4 overflow-y-auto">
               <div className="space-y-1">
                 <label className="block text-sm font-semibold text-slate-700">App Version</label>
-                <input
-                  type="text"
-                  value={addForm.version}
-                  onChange={e => setAddForm(f => ({ ...f, version: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. 1.0.0"
-                />
+                <input type="text" value={addForm.version} onChange={e => setAddForm(f => ({ ...f, version: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 1.0.0" />
               </div>
-
               {LINK_META.map(({ label, sub, optional }, i) => (
                 <div key={i} className="space-y-1">
-                  <label className="block text-sm font-semibold text-slate-700">
-                    {label}{' '}
-                    {optional && <span className="font-normal text-gray-400">(optional)</span>}
-                  </label>
-                  <input
-                    type="text"
-                    value={addForm.downloadLinks[i]}
-                    onChange={e => setAddForm(f => {
-                      const links = [...f.downloadLinks];
-                      links[i] = e.target.value;
-                      return { ...f, downloadLinks: links };
-                    })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
+                  <label className="block text-sm font-semibold text-slate-700">{label}{optional && <span className="font-normal text-gray-400"> (optional)</span>}</label>
+                  <input type="text" value={addForm.downloadLinks[i]} onChange={e => setAddForm(f => { const links = [...f.downloadLinks]; links[i] = e.target.value; return { ...f, downloadLinks: links }; })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <p className="text-xs text-gray-400">{sub}</p>
                 </div>
               ))}
-
               <div className="space-y-1">
                 <label className="block text-sm font-semibold text-slate-700">Chinese Changelog</label>
-                <textarea
-                  value={addForm.changelogZh}
-                  onChange={e => setAddForm(f => ({ ...f, changelogZh: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <textarea value={addForm.changelogZh} onChange={e => setAddForm(f => ({ ...f, changelogZh: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div className="space-y-1">
                 <label className="block text-sm font-semibold text-slate-700">English Changelog</label>
-                <textarea
-                  value={addForm.changelogEn}
-                  onChange={e => setAddForm(f => ({ ...f, changelogEn: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <textarea value={addForm.changelogEn} onChange={e => setAddForm(f => ({ ...f, changelogEn: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="add_translate"
-                  checked={addForm.autoTranslate}
-                  onChange={e => setAddForm(f => ({ ...f, autoTranslate: e.target.checked }))}
-                  className="rounded border-gray-300 text-blue-600"
-                />
-                <label htmlFor="add_translate" className="text-sm text-gray-600">
-                  Auto translate Chinese changelog
-                </label>
+                <input type="checkbox" id="add_translate" checked={addForm.autoTranslate} onChange={e => setAddForm(f => ({ ...f, autoTranslate: e.target.checked }))} className="rounded border-gray-300 text-blue-600" />
+                <label htmlFor="add_translate" className="text-sm text-gray-600">Auto translate Chinese changelog</label>
               </div>
-
               <hr className="border-gray-100" />
-
-              {/* Rollout section */}
               <div className="space-y-4">
-                {/* Segment — always visible, independent of global/custom */}
                 <div className="space-y-1">
                   <label className="block text-sm font-semibold text-slate-700">Target Segment</label>
-                  <SegmentDropdown
-                    value={addForm.segment}
-                    onChange={v => setAddForm(f => ({ ...f, segment: v }))}
-                  />
-                  <p className="text-xs text-gray-400">
-                    Leave blank to target all users. At 100%, all users in the selected segment receive the update.
-                  </p>
+                  <SegmentDropdownImpl value={addForm.segment} onChange={v => setAddForm(f => ({ ...f, segment: v }))} />
+                  <p className="text-xs text-gray-400">Leave blank to target all users. At 100%, all users in the selected segment receive the update.</p>
                 </div>
-
-                {/* Stage config */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="text-sm font-semibold text-slate-700">Gradual Rollout Stages</h3>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAddForm(f => ({
-                          ...f,
-                          useGlobalRollout: !f.useGlobalRollout,
-                          localStages: f.useGlobalRollout
-                            ? globalStages.map(s => ({ ...s }))
-                            : f.localStages,
-                        }))
-                      }
-                      className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${
-                        addForm.useGlobalRollout
-                          ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                          : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
-                      }`}
-                    >
-                      {addForm.useGlobalRollout
-                        ? 'Using Global Config — Switch to Custom'
-                        : 'Using Custom Config — Switch to Global'}
+                    <button type="button" onClick={() => setAddForm(f => ({ ...f, useGlobalRollout: !f.useGlobalRollout, localStages: f.useGlobalRollout ? globalStages.map(s => ({ ...s })) : f.localStages }))}
+                      className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${addForm.useGlobalRollout ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'}`}>
+                      {addForm.useGlobalRollout ? 'Using Global Config — Switch to Custom' : 'Using Custom Config — Switch to Global'}
                     </button>
                   </div>
-
                   {addForm.useGlobalRollout ? (
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-2 border border-blue-200">
                       {globalStages.map((item, index) => (
                         <div key={item.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">
-                            {index + 1}
-                          </div>
+                          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">{index + 1}</div>
                           <div className="flex-1 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-bold text-slate-800">Target {item.percent}%</span>
                               <span className="text-gray-400">•</span>
-                              <span className="text-xs text-gray-600">
-                                ~{Math.round((segmentSize(addForm.segment || 'All Users')) * item.percent / 100).toLocaleString()} users
-                              </span>
+                              <span className="text-xs text-gray-600">~{Math.round(segmentSize(addForm.segment || 'All Users') * item.percent / 100).toLocaleString()} users</span>
                             </div>
                             <span className="text-sm font-semibold text-slate-700">Wait {item.time}h</span>
                           </div>
                         </div>
                       ))}
-                      <p className="text-xs text-gray-400 text-center pt-1">
-                        Click the button above to customise stages
-                      </p>
+                      <p className="text-xs text-gray-400 text-center pt-1">Click the button above to customise stages</p>
                     </div>
                   ) : (
-                    <StagesEditor
-                      stages={addForm.localStages}
-                      onChange={updateAddStage}
-                      onAdd={addAddStage}
-                      onDelete={deleteAddStage}
-                    />
+                    <StagesEditor stages={addForm.localStages} onChange={updateAddStage} onAdd={addAddStage} onDelete={deleteAddStage} />
                   )}
                 </div>
-
                 <div className="flex gap-2 items-start text-xs bg-blue-50 border border-blue-200 p-3 rounded-lg">
                   <span className="text-base">💡</span>
                   <div>
-                    <p className="text-blue-900 font-medium mb-1">
-                      {addForm.useGlobalRollout ? 'Automatic Staged Rollout' : 'Custom Staged Rollout'}
-                    </p>
-                    <p className="text-blue-700 leading-relaxed">
-                      {addForm.useGlobalRollout
-                        ? `Uses the global stage configuration. After saving, click Start Rollout on Stage 1 to begin.`
-                        : `Uses a custom stage configuration. After saving, click Start Rollout on Stage 1 to begin.`}
-                    </p>
+                    <p className="text-blue-900 font-medium mb-1">{addForm.useGlobalRollout ? 'Automatic Staged Rollout' : 'Custom Staged Rollout'}</p>
+                    <p className="text-blue-700 leading-relaxed">{addForm.useGlobalRollout ? 'Uses the global stage configuration. After saving, click Start Rollout on Stage 1 to begin.' : 'Uses a custom stage configuration. After saving, click Start Rollout on Stage 1 to begin.'}</p>
                   </div>
                 </div>
               </div>
             </div>
-
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
-              <button
-                onClick={() => setAddModal(null)}
-                className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveAdd}
-                className="px-4 py-2 bg-black text-white rounded text-sm font-medium hover:bg-slate-800 flex items-center gap-2"
-              >
-                <Save size={16} /> Save
-              </button>
+              <button onClick={() => setAddModal(null)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveAdd} className="px-4 py-2 bg-black text-white rounded text-sm font-medium hover:bg-slate-800 flex items-center gap-2"><Save size={16} /> Save</button>
             </div>
           </div>
         </div>
@@ -1365,97 +1049,47 @@ export default function AppVersionConfig() {
       {editModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg w-full max-w-2xl my-8 shadow-2xl flex flex-col max-h-[90vh]">
-
             <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex justify-between items-center rounded-t-lg">
-              <h2 className="text-lg font-bold text-slate-800">
-                Edit {editingPlatform?.name} v{editingVersion?.version} Configuration
-              </h2>
-              <button onClick={() => { setEditModal(null); setShowRerunConfirm(false); }} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
+              <h2 className="text-lg font-bold text-slate-800">Edit {editingPlatform?.name} v{editingVersion?.version} Configuration</h2>
+              <button onClick={() => { setEditModal(null); setShowRerunConfirm(false); }} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
-
             <div className="p-6 space-y-4 overflow-y-auto">
               <div className="space-y-1">
                 <label className="block text-sm font-semibold text-slate-700">App Version</label>
-                <input
-                  type="text"
-                  value={editForm.version}
-                  onChange={e => setEditForm(f => ({ ...f, version: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="text" value={editForm.version} onChange={e => setEditForm(f => ({ ...f, version: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-
               {LINK_META.map(({ label, sub, optional }, i) => (
                 <div key={i} className="space-y-1">
-                  <label className="block text-sm font-semibold text-slate-700">
-                    {label}{' '}
-                    {optional && <span className="font-normal text-gray-400">(optional)</span>}
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.downloadLinks[i] ?? ''}
-                    onChange={e => setEditForm(f => {
-                      const links = [...f.downloadLinks];
-                      links[i] = e.target.value;
-                      return { ...f, downloadLinks: links };
-                    })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
+                  <label className="block text-sm font-semibold text-slate-700">{label}{optional && <span className="font-normal text-gray-400"> (optional)</span>}</label>
+                  <input type="text" value={editForm.downloadLinks[i] ?? ''} onChange={e => setEditForm(f => { const links = [...f.downloadLinks]; links[i] = e.target.value; return { ...f, downloadLinks: links }; })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <p className="text-xs text-gray-400">{sub}</p>
                 </div>
               ))}
-
               <div className="space-y-1">
                 <label className="block text-sm font-semibold text-slate-700">Chinese Changelog</label>
-                <textarea
-                  value={editForm.changelogZh}
-                  onChange={e => setEditForm(f => ({ ...f, changelogZh: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <textarea value={editForm.changelogZh} onChange={e => setEditForm(f => ({ ...f, changelogZh: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div className="space-y-1">
                 <label className="block text-sm font-semibold text-slate-700">English Changelog</label>
-                <textarea
-                  value={editForm.changelogEn}
-                  onChange={e => setEditForm(f => ({ ...f, changelogEn: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <textarea value={editForm.changelogEn} onChange={e => setEditForm(f => ({ ...f, changelogEn: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="edit_translate"
-                  checked={editForm.autoTranslate}
-                  onChange={e => setEditForm(f => ({ ...f, autoTranslate: e.target.checked }))}
-                  className="rounded border-gray-300 text-blue-600"
-                />
-                <label htmlFor="edit_translate" className="text-sm text-gray-600">
-                  Auto-translate Chinese changelog
-                </label>
+                <input type="checkbox" id="edit_translate" checked={editForm.autoTranslate} onChange={e => setEditForm(f => ({ ...f, autoTranslate: e.target.checked }))} className="rounded border-gray-300 text-blue-600" />
+                <label htmlFor="edit_translate" className="text-sm text-gray-600">Auto-translate Chinese changelog</label>
               </div>
-
               <div className="space-y-2 pt-1">
                 <label className="block text-sm font-semibold text-slate-700">Version Settings</label>
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="set_default"
-                      checked={editForm.setAsDefault}
-                      onChange={e => setEditForm(f => ({ ...f, setAsDefault: e.target.checked }))}
-                      className="rounded border-gray-300 text-blue-600"
-                    />
+                    <input type="checkbox" id="set_default" checked={editForm.setAsDefault} onChange={e => setEditForm(f => ({ ...f, setAsDefault: e.target.checked }))} className="rounded border-gray-300 text-blue-600" />
                     <label htmlFor="set_default" className="text-sm text-slate-700">Set as default version</label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="set_min"
-                      checked={editForm.setAsMin}
-                      onChange={e => setEditForm(f => ({ ...f, setAsMin: e.target.checked }))}
-                      className="rounded border-gray-300 text-blue-600"
-                    />
+                    <input type="checkbox" id="set_min" checked={editForm.setAsMin} onChange={e => setEditForm(f => ({ ...f, setAsMin: e.target.checked }))} className="rounded border-gray-300 text-blue-600" />
                     <label htmlFor="set_min" className="text-sm text-slate-700">Set as minimum version</label>
                   </div>
                 </div>
@@ -1468,120 +1102,63 @@ export default function AppVersionConfig() {
                   <>
                     <hr className="border-gray-100" />
                     <div className="space-y-3">
-                      <button
-                        type="button"
-                        onClick={() => setEditStagesExpanded(v => !v)}
-                        className="w-full flex items-center justify-between group"
-                      >
-                        <h3 className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
-                          Gradual Rollout Configuration
-                        </h3>
+                      <button type="button" onClick={() => setEditStagesExpanded(v => !v)} className="w-full flex items-center justify-between group">
+                        <h3 className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">Gradual Rollout Configuration</h3>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
-                            Latest Version Only
-                          </span>
-                          <ChevronDown
-                            size={15}
-                            className={`text-gray-400 transition-transform ${editStagesExpanded ? '' : '-rotate-90'}`}
-                          />
+                          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">Latest Version Only</span>
+                          <ChevronDown size={15} className={`text-gray-400 transition-transform ${editStagesExpanded ? '' : '-rotate-90'}`} />
                         </div>
                       </button>
 
                       {editStagesExpanded && (rs === 'in_progress' ? (
-                        /* Locked while rollout is running */
                         <div className="flex gap-3 items-start bg-amber-50 border border-amber-200 rounded-lg p-3">
                           <span className="text-base shrink-0">🔒</span>
                           <div>
-                            <p className="text-sm font-medium text-amber-800 mb-0.5">
-                              Rollout in progress
-                            </p>
-                            <p className="text-xs text-amber-700 leading-relaxed">
-                              The rollout configuration cannot be edited while a rollout is active.
-                              Wait for all stages to complete, then you can rerun with new settings.
-                            </p>
+                            <p className="text-sm font-medium text-amber-800 mb-0.5">Rollout in progress</p>
+                            <p className="text-xs text-amber-700 leading-relaxed">The rollout configuration cannot be edited while a rollout is active. Wait for all stages to complete, then you can rerun with new settings.</p>
                           </div>
                         </div>
                       ) : (
-                        /* Editable for completed or not_started */
                         <>
                           <div className="space-y-1">
                             <label className="block text-sm font-medium text-slate-700">Target Segment</label>
-                            <SegmentDropdown
-                              value={editForm.rolloutSegment}
-                              onChange={v => setEditForm(f => ({ ...f, rolloutSegment: v, rolloutModified: true }))}
-                            />
+                            <SegmentDropdownImpl value={editForm.rolloutSegment} onChange={v => setEditForm(f => ({ ...f, rolloutSegment: v, rolloutModified: true }))} />
                           </div>
-
                           <div className="space-y-2">
                             <div className="flex justify-between items-center">
                               <label className="block text-sm font-medium text-slate-700">Rollout Stages</label>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEditForm(f => ({
-                                    ...f,
-                                    editUseGlobal: !f.editUseGlobal,
-                                    // seed local stages from global when switching to custom
-                                    rolloutStages: !f.editUseGlobal
-                                      ? f.rolloutStages
-                                      : globalStages.map(s => ({ ...s })),
-                                    rolloutModified: true,
-                                  }))
-                                }
-                                className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${
-                                  editForm.editUseGlobal
-                                    ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                                    : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
-                                }`}
-                              >
-                                {editForm.editUseGlobal
-                                  ? 'Using Global Config — Switch to Custom'
-                                  : 'Using Custom Config — Switch to Global'}
+                              <button type="button" onClick={() => setEditForm(f => ({ ...f, editUseGlobal: !f.editUseGlobal, rolloutStages: !f.editUseGlobal ? f.rolloutStages : globalStages.map(s => ({ ...s })), rolloutModified: true }))}
+                                className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${editForm.editUseGlobal ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'}`}>
+                                {editForm.editUseGlobal ? 'Using Global Config — Switch to Custom' : 'Using Custom Config — Switch to Global'}
                               </button>
                             </div>
-
                             {editForm.editUseGlobal ? (
                               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-2 border border-blue-200">
                                 {globalStages.map((item, index) => (
                                   <div key={item.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center gap-3">
-                                    <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs border border-blue-100 shrink-0">
-                                      {index + 1}
-                                    </div>
+                                    <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs border border-blue-100 shrink-0">{index + 1}</div>
                                     <div className="flex-1 flex items-center justify-between">
                                       <div className="flex items-center gap-2">
                                         <span className="text-sm font-bold text-slate-800">Target {item.percent}%</span>
                                         <span className="text-gray-400">•</span>
-                                        <span className="text-xs text-gray-600">
-                                          ~{Math.round(segmentSize(editForm.rolloutSegment || 'All Users') * item.percent / 100).toLocaleString()} users
-                                        </span>
+                                        <span className="text-xs text-gray-600">~{Math.round(segmentSize(editForm.rolloutSegment || 'All Users') * item.percent / 100).toLocaleString()} users</span>
                                       </div>
                                       <span className="text-sm font-semibold text-slate-700">Wait {item.time}h</span>
                                     </div>
                                   </div>
                                 ))}
-                                <p className="text-xs text-gray-400 text-center pt-1">
-                                  Click the button above to customise stages
-                                </p>
+                                <p className="text-xs text-gray-400 text-center pt-1">Click the button above to customise stages</p>
                               </div>
                             ) : (
-                              <StagesEditor
-                                stages={editForm.rolloutStages}
-                                onChange={updateEditStage}
-                                onAdd={addEditStage}
-                                onDelete={deleteEditStage}
-                              />
+                              <StagesEditor stages={editForm.rolloutStages} onChange={updateEditStage} onAdd={addEditStage} onDelete={deleteEditStage} />
                             )}
                           </div>
-
                           {editForm.rolloutModified && rs === 'completed' && (
                             <div className="flex gap-2 items-start text-xs bg-amber-50 border border-amber-200 p-3 rounded-lg">
                               <span className="text-base shrink-0">⚠️</span>
                               <div>
                                 <p className="text-amber-800 font-medium mb-0.5">Rollout configuration changed</p>
-                                <p className="text-amber-700 leading-relaxed">
-                                  Click <strong>Rerun Rollout</strong> to restart with the new configuration and
-                                  target segment. Users who already updated will keep their version.
-                                </p>
+                                <p className="text-amber-700 leading-relaxed">Click <strong>Rerun Rollout</strong> to restart with the new configuration and target segment. Users who already updated will keep their version.</p>
                               </div>
                             </div>
                           )}
@@ -1592,34 +1169,18 @@ export default function AppVersionConfig() {
                 );
               })()}
             </div>
-
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center rounded-b-lg">
               <div>
-                {/* Rerun only when completed + modified */}
-                {editingVersion?.isLatest &&
-                  editingVersion.rollout?.status === 'completed' &&
-                  editForm.rolloutModified && (
-                  <button
-                    onClick={() => setShowRerunConfirm(true)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2 transition-colors"
-                  >
+                {editingVersion?.isLatest && editingVersion.rollout?.status === 'completed' && editForm.rolloutModified && (
+                  <button onClick={() => setShowRerunConfirm(true)}
+                    className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2 transition-colors">
                     <RefreshCw size={15} /> Rerun Rollout
                   </button>
                 )}
               </div>
               <div className="flex gap-3">
-                <button
-                  onClick={() => { setEditModal(null); setShowRerunConfirm(false); }}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
-                >
-                  <Save size={16} /> Save
-                </button>
+                <button onClick={() => { setEditModal(null); setShowRerunConfirm(false); }} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleSaveEdit} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"><Save size={16} /> Save</button>
               </div>
             </div>
           </div>
@@ -1632,83 +1193,49 @@ export default function AppVersionConfig() {
       {showGlobalConfigModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-lg w-full max-w-2xl my-8 shadow-2xl flex flex-col max-h-[90vh]">
-
             <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex justify-between items-start rounded-t-lg">
               <div>
-                <h2 className="text-lg font-bold text-slate-800">
-                  Global Gradual Rollout Stage Configuration
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  Applied to new version releases when not using a custom per-version config
-                </p>
+                <h2 className="text-lg font-bold text-slate-800">Global Gradual Rollout Stage Configuration</h2>
+                <p className="text-xs text-gray-500 mt-1">Applied to new version releases when not using a custom per-version config</p>
               </div>
-              <button onClick={() => setShowGlobalConfigModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
+              <button onClick={() => setShowGlobalConfigModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
-
             <div className="p-6 space-y-4 overflow-y-auto">
               <div className="bg-blue-50 border border-blue-100 rounded-md p-3 flex items-start gap-2">
                 <span className="text-sm shrink-0">💡</span>
-                <p className="text-xs text-blue-800 leading-relaxed">
-                  Configure the default stages for gradual rollout across all platforms.
-                  Individual versions can override this with a custom config.
-                </p>
+                <p className="text-xs text-blue-800 leading-relaxed">Configure the default stages for gradual rollout across all platforms. Individual versions can override this with a custom config.</p>
               </div>
-
               <div className="space-y-3">
                 {globalStages.map((stage, index) => (
                   <div key={stage.id} className="border border-gray-200 rounded-lg p-3 bg-white flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">
-                      {index + 1}
-                    </div>
+                    <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">{index + 1}</div>
                     <div className="flex-1 grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[10px] text-gray-500 mb-1">Target Percentage</label>
                         <div className="relative">
-                          <input
-                            type="number"
-                            value={stage.percent}
-                            onChange={e => updateGlobalStage(stage.id, 'percent', e.target.value)}
-                            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
+                          <input type="number" value={stage.percent} onChange={e => updateGlobalStage(stage.id, 'percent', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                           <span className="absolute right-3 top-1.5 text-gray-400 text-sm">%</span>
                         </div>
                       </div>
                       <div>
                         <label className="block text-[10px] text-gray-500 mb-1">Wait Duration</label>
                         <div className="relative">
-                          <input
-                            type="number"
-                            value={stage.time}
-                            onChange={e => updateGlobalStage(stage.id, 'time', e.target.value)}
-                            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm pr-14 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
+                          <input type="number" value={stage.time} onChange={e => updateGlobalStage(stage.id, 'time', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm pr-14 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                           <span className="absolute right-3 top-1.5 text-gray-400 text-sm">hours</span>
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => deleteGlobalStage(stage.id)}
-                      className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <button onClick={() => deleteGlobalStage(stage.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded transition-colors"><Trash2 size={16} /></button>
                   </div>
                 ))}
               </div>
-
-              <button
-                onClick={addGlobalStage}
-                className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-700 hover:border-gray-400 transition-all flex items-center justify-center gap-2 text-sm font-medium"
-              >
+              <button onClick={addGlobalStage} className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-700 hover:border-gray-400 transition-all flex items-center justify-center gap-2 text-sm font-medium">
                 <Plus size={16} /> Add Stage
               </button>
-
               <div className="bg-yellow-50 border border-yellow-100 rounded-md p-4">
-                <h4 className="flex items-center gap-2 text-xs font-bold text-yellow-700 mb-2">
-                  <span>⚠️</span> Configuration Recommendations
-                </h4>
+                <h4 className="flex items-center gap-2 text-xs font-bold text-yellow-700 mb-2"><span>⚠️</span> Configuration Recommendations</h4>
                 <ul className="list-disc list-inside text-[11px] text-yellow-800 space-y-1 ml-1">
                   <li>The first stage should have a small percentage (e.g., 5%) to detect issues early</li>
                   <li>The last stage should be set to 100% to ensure full release</li>
@@ -1717,27 +1244,13 @@ export default function AppVersionConfig() {
                 </ul>
               </div>
             </div>
-
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center rounded-b-lg">
-              <button
-                onClick={() => setGlobalStages(INITIAL_GLOBAL_CONFIG)}
-                className="text-gray-500 text-sm hover:text-gray-700 flex items-center gap-1"
-              >
+              <button onClick={() => setGlobalStages(INITIAL_GLOBAL_CONFIG)} className="text-gray-500 text-sm hover:text-gray-700 flex items-center gap-1">
                 <RotateCcw size={14} /> Restore Default Config
               </button>
               <div className="flex gap-3">
-                <button
-                  onClick={() => setShowGlobalConfigModal(false)}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => setShowGlobalConfigModal(false)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
-                >
-                  <Save size={16} /> Save Config
-                </button>
+                <button onClick={() => setShowGlobalConfigModal(false)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button onClick={() => setShowGlobalConfigModal(false)} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"><Save size={16} /> Save Config</button>
               </div>
             </div>
           </div>
@@ -1745,25 +1258,20 @@ export default function AppVersionConfig() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          RERUN ROLLOUT CONFIRMATION DIALOG
+          RERUN ROLLOUT CONFIRMATION
       ═══════════════════════════════════════════════════════════════════════ */}
       {showRerunConfirm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-lg w-full max-w-sm shadow-2xl">
             <div className="p-5">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center shrink-0">
-                  <RefreshCw size={18} className="text-purple-600" />
-                </div>
+                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center shrink-0"><RefreshCw size={18} className="text-purple-600" /></div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">Confirm Rerun Rollout</h3>
                   <p className="text-xs text-gray-500">Resets rollout to Not Started — you'll press Start to begin</p>
                 </div>
               </div>
-              <p className="text-sm text-slate-700 mb-3">
-                Are you sure you want to rerun the rollout for{' '}
-                <strong>v{editingVersion?.version}</strong>?
-              </p>
+              <p className="text-sm text-slate-700 mb-3">Are you sure you want to rerun the rollout for <strong>v{editingVersion?.version}</strong>?</p>
               <div className="bg-purple-50 border border-purple-100 rounded-md p-3 text-xs text-purple-800 space-y-1.5">
                 <p>• Target segment: <strong>{editForm.rolloutSegment || 'All Users'}</strong></p>
                 <p>• Rollout will be reset — press Start on Stage 1 to begin</p>
@@ -1771,18 +1279,111 @@ export default function AppVersionConfig() {
               </div>
             </div>
             <div className="px-5 pb-5 flex justify-end gap-3">
-              <button
-                onClick={() => setShowRerunConfirm(false)}
-                className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { setShowRerunConfirm(false); handleRerunRollout(); }}
-                className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2"
-              >
+              <button onClick={() => setShowRerunConfirm(false)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={() => { setShowRerunConfirm(false); handleRerunRollout(); }} className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2">
                 <RefreshCw size={14} /> Confirm Rerun
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          STOP RELEASE CONFIRMATION
+      ═══════════════════════════════════════════════════════════════════════ */}
+      {stopReleaseTarget && (() => {
+        const plat = platforms.find(p => p.id === stopReleaseTarget.platformId);
+        const ver  = plat?.versions.find(v => v.id === stopReleaseTarget.versionId);
+        const defaultVer = plat?.versions.find(v => v.isDefault && v.id !== stopReleaseTarget.versionId);
+        return (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-lg w-full max-w-sm shadow-2xl">
+              <div className="p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0"><Trash2 size={18} className="text-red-600" /></div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">Stop Release</h3>
+                    <p className="text-xs text-gray-500">The rollout will be halted and the Latest tag removed</p>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-700 mb-3">Stop the release of <strong>v{ver?.version}</strong> on {plat?.name}?</p>
+                <div className="bg-red-50 border border-red-100 rounded-md p-3 text-xs text-red-800 space-y-1.5">
+                  <p>• The gradual rollout will be stopped immediately</p>
+                  <p>• <strong>v{ver?.version}</strong> will lose its Latest Version tag</p>
+                  {defaultVer
+                    ? <p>• <strong>v{defaultVer.version}</strong> (Default) will become the new Latest</p>
+                    : <p>• No Default version found — no version will receive the Latest tag</p>}
+                  <p>• The version will remain visible in the list</p>
+                </div>
+              </div>
+              <div className="px-5 pb-5 flex justify-end gap-3">
+                <button onClick={() => setStopReleaseTarget(null)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button onClick={() => handleStopRelease(stopReleaseTarget.platformId, stopReleaseTarget.versionId)}
+                  className="px-4 py-2 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 flex items-center gap-2">
+                  <Trash2 size={14} /> Confirm Stop
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          FORCE UPDATE VERSION DIALOG
+      ═══════════════════════════════════════════════════════════════════════ */}
+      {showForceUpdateDialog && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg w-full max-w-lg my-8 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex justify-between items-start rounded-t-lg">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">Force Update Version</h2>
+                <p className="text-xs text-gray-500 mt-1">Per-platform minimum forced upgrade target</p>
+              </div>
+              <button onClick={() => setShowForceUpdateDialog(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-5 overflow-y-auto">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 mb-1">About Force Update</p>
+                  <p className="text-xs text-amber-700 leading-relaxed">
+                    Users running a <strong>Faulty</strong> version will be forced to update to the selected version before they can continue using the app.
+                    Eligible versions are those at or above the Minimum Version and at or below the Default Version, excluding any Faulty versions.
+                  </p>
+                </div>
+              </div>
+
+              {platforms.map(platform => {
+                const eligible = getEligibleForceVersions(platform);
+                const current  = forceUpdateSelections[platform.id] ?? '';
+                return (
+                  <div key={platform.id} className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                      <div className={`w-2.5 h-2.5 rounded-full ${platform.dotColor}`} />
+                      {platform.name}
+                    </label>
+                    <select value={current} onChange={e => setForceUpdateSelections(s => ({ ...s, [platform.id]: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white">
+                      <option value="">— No force update —</option>
+                      {eligible.map(v => (
+                        <option key={v.id} value={v.version}>
+                          v{v.version}{v.isDefault ? ' · Default' : ''}{v.isLatest ? ' · Latest' : ''}{v.isMinVersion ? ' · Min' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {eligible.length === 0 && (
+                      <p className="text-xs text-red-500">No eligible versions available (all versions are faulty or below the minimum).</p>
+                    )}
+                    {eligible.length > 0 && (
+                      <p className="text-xs text-gray-400">{eligible.length} eligible version{eligible.length !== 1 ? 's' : ''} · excludes faulty and below-minimum versions</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
+              <button onClick={() => setShowForceUpdateDialog(false)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveForceUpdate} className="px-4 py-2 bg-black text-white rounded text-sm font-medium hover:bg-slate-800 flex items-center gap-2"><Save size={16} /> Save</button>
             </div>
           </div>
         </div>
