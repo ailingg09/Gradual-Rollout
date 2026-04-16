@@ -1348,7 +1348,7 @@ export default function AppVersionConfig() {
                   <p className="text-sm font-semibold text-amber-800 mb-1">About Force Update</p>
                   <p className="text-xs text-amber-700 leading-relaxed">
                     Users running a <strong>Faulty</strong> version will be forced to update to the selected version before they can continue using the app.
-                    Eligible versions are those at or above the Minimum Version and at or below the Default Version, excluding any Faulty versions.
+                    Eligible versions are those at or above the Minimum Version, excluding any Faulty versions. Version must be rolled out to All Users.
                   </p>
                 </div>
               </div>
