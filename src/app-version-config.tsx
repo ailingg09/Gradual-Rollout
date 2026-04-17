@@ -691,7 +691,7 @@ export default function AppVersionConfig() {
             </div>
             <div className="mt-3">
               <div className="flex justify-between text-xs font-medium mb-1">
-                <span className="text-gray-500">Update Status at Stop</span>
+                <span className="text-gray-500">Current Update Status</span>
                 <span className="text-gray-500">{r.currentPercent}%</span>
               </div>
               <p className="text-xs text-gray-400 mb-2">{r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users had updated</p>
