@@ -146,7 +146,7 @@ const INITIAL_PLATFORMS: PlatformData[] = [
     ],
   },
   {
-    id: 'ios', name: 'IOS', dotColor: 'bg-blue-500', expanded: true,
+    id: 'ios', name: 'LINUX', dotColor: 'bg-blue-500', expanded: true,
     forceUpdateVersion: null,
     versions: [
       {
@@ -687,7 +687,6 @@ export default function AppVersionConfig() {
             <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
               <div className="text-gray-400"><Settings size={15} /></div>
               <span>Gradual Rollout</span>
-              <span className="bg-gray-200 text-gray-500 px-2 py-0.5 rounded text-xs font-semibold">Stopped</span>
               <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
             </div>
             <div className="mt-3">
