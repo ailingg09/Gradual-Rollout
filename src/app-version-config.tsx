@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import {
   ChevronRight, ChevronDown, Plus, MoreHorizontal, Edit2,
   Copy, Trash2, Clock, Settings, Save, X, RotateCcw, Check, RefreshCw, Play,
-  ShieldAlert,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -74,7 +73,6 @@ interface VersionData {
 interface PlatformData {
   id: string; name: string; dotColor: string; expanded: boolean;
   versions: VersionData[];
-  forceUpdateVersion: string | null;
 }
 
 // ─── Initial Mock Data ────────────────────────────────────────────────────────
@@ -82,7 +80,6 @@ interface PlatformData {
 const INITIAL_PLATFORMS: PlatformData[] = [
   {
     id: 'windows', name: 'WINDOWS', dotColor: 'bg-blue-500', expanded: false,
-    forceUpdateVersion: '1.0.20',
     versions: [
       {
         id: 'win-1.0.21', version: '1.0.21',
@@ -147,7 +144,6 @@ const INITIAL_PLATFORMS: PlatformData[] = [
   },
   {
     id: 'ios', name: 'LINUX', dotColor: 'bg-blue-500', expanded: true,
-    forceUpdateVersion: null,
     versions: [
       {
         id: 'ios-2.1.0', version: '2.1.0',
@@ -212,7 +208,6 @@ const INITIAL_PLATFORMS: PlatformData[] = [
   },
   {
     id: 'android', name: 'ANDROID', dotColor: 'bg-green-500', expanded: true,
-    forceUpdateVersion: '1.0.21',
     versions: [
       {
         id: 'android-1.0.22', version: '1.0.22',
@@ -271,26 +266,7 @@ function segmentSize(segment: string): number {
   return SEGMENT_SIZES[segment] ?? 82000;
 }
 
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
 
-function getEligibleForceVersions(platform: PlatformData): VersionData[] {
-  const minVer   = platform.versions.find(v => v.isMinVersion);
-  const upperVer = platform.versions.find(v => v.isDefault) ?? platform.versions.find(v => v.isLatest);
-  return platform.versions.filter(v => {
-    if (v.isFaulty) return false;
-    if (minVer   && compareVersions(v.version, minVer.version)   < 0) return false; // below min
-    if (upperVer && compareVersions(v.version, upperVer.version) > 0) return false; // above default
-    return true;
-  });
-}
 
 function getSegmentOverlap(fromSegment: string, fromUsersUpdated: number, toSegment: string): number {
   if (fromSegment === toSegment) return fromUsersUpdated;
@@ -462,10 +438,6 @@ export default function AppVersionConfig() {
   // More menu
   const [openMoreMenu, setOpenMoreMenu] = useState<string | null>(null);
 
-  // Force Update Version
-  const [showForceUpdateDialog, setShowForceUpdateDialog] = useState(false);
-  const [forceUpdateSelections, setForceUpdateSelections] = useState<Record<string, string>>({});
-
   // Add modal
   const [addModal, setAddModal] = useState<{ platformId: string } | null>(null);
   const [addForm, setAddForm] = useState({
@@ -555,18 +527,6 @@ export default function AppVersionConfig() {
       p.id !== platformId ? p : { ...p, versions: p.versions.map(v => v.id !== versionId ? v : { ...v, isFaulty: !v.isFaulty }) }
     ));
     setOpenMoreMenu(null);
-  };
-
-  // ── Force update ──
-  const openForceUpdateDialog = () => {
-    const init: Record<string, string> = {};
-    platforms.forEach(p => { init[p.id] = p.forceUpdateVersion ?? ''; });
-    setForceUpdateSelections(init);
-    setShowForceUpdateDialog(true);
-  };
-  const handleSaveForceUpdate = () => {
-    setPlatforms(prev => prev.map(p => ({ ...p, forceUpdateVersion: forceUpdateSelections[p.id] || null })));
-    setShowForceUpdateDialog(false);
   };
 
   // ── Open modals ──
@@ -847,16 +807,10 @@ export default function AppVersionConfig() {
       {/* Page Header */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl md:text-2xl font-bold text-slate-900">App Version Configuration</h1>
-        <div className="flex items-center gap-3">
-          <button onClick={openForceUpdateDialog}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 text-slate-600 shadow-sm transition-all">
-            <ShieldAlert size={16} /> Force Update Version
-          </button>
-          <button onClick={() => setShowGlobalConfigModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 text-slate-600 shadow-sm transition-all">
-            <Settings size={16} /> Global Rollout Config
-          </button>
-        </div>
+        <button onClick={() => setShowGlobalConfigModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 text-slate-600 shadow-sm transition-all">
+          <Settings size={16} /> Global Rollout Config
+        </button>
       </div>
 
       {/* Platform list */}
@@ -1327,66 +1281,6 @@ export default function AppVersionConfig() {
         );
       })()}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
-          FORCE UPDATE VERSION DIALOG
-      ═══════════════════════════════════════════════════════════════════════ */}
-      {showForceUpdateDialog && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg w-full max-w-lg my-8 shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex justify-between items-start rounded-t-lg">
-              <div>
-                <h2 className="text-lg font-bold text-slate-800">Force Update Version</h2>
-                <p className="text-xs text-gray-500 mt-1">Per-platform minimum forced upgrade target</p>
-              </div>
-              <button onClick={() => setShowForceUpdateDialog(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-            </div>
-            <div className="p-6 space-y-5 overflow-y-auto">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
-                <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-800 mb-1">About Force Update</p>
-                  <p className="text-xs text-amber-700 leading-relaxed">
-                    Users running a <strong>Faulty</strong> version will be forced to update to the selected version before they can continue using the app.
-                    Eligible versions are those at or above the Minimum Version, excluding any Faulty versions. Version must be rolled out to All Users.
-                  </p>
-                </div>
-              </div>
-
-              {platforms.map(platform => {
-                const eligible = getEligibleForceVersions(platform);
-                const current  = forceUpdateSelections[platform.id] ?? '';
-                return (
-                  <div key={platform.id} className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                      <div className={`w-2.5 h-2.5 rounded-full ${platform.dotColor}`} />
-                      {platform.name}
-                    </label>
-                    <select value={current} onChange={e => setForceUpdateSelections(s => ({ ...s, [platform.id]: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white">
-                      <option value="">— No force update —</option>
-                      {eligible.map(v => (
-                        <option key={v.id} value={v.version}>
-                          v{v.version}{v.isDefault ? ' · Default' : ''}{v.isLatest ? ' · Latest' : ''}{v.isMinVersion ? ' · Min' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    {eligible.length === 0 && (
-                      <p className="text-xs text-red-500">No eligible versions available (all versions are faulty or below the minimum).</p>
-                    )}
-                    {eligible.length > 0 && (
-                      <p className="text-xs text-gray-400">{eligible.length} eligible version{eligible.length !== 1 ? 's' : ''} · excludes faulty and below-minimum versions</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
-              <button onClick={() => setShowForceUpdateDialog(false)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSaveForceUpdate} className="px-4 py-2 bg-black text-white rounded text-sm font-medium hover:bg-slate-800 flex items-center gap-2"><Save size={16} /> Save</button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
