@@ -950,32 +950,6 @@ export default function AppVersionConfig() {
                 <input type="checkbox" id="add_translate" checked={addForm.autoTranslate} onChange={e => setAddForm(f => ({ ...f, autoTranslate: e.target.checked }))} className="rounded border-gray-300 text-blue-600" />
                 <label htmlFor="add_translate" className="text-sm text-gray-600">Auto translate Chinese changelog</label>
               </div>
-              <hr className="border-gray-100" />
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-slate-700">Gradual Rollout Stages</h3>
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-2 border border-blue-200">
-                  {globalStages.map((item, index) => (
-                    <div key={item.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">{index + 1}</div>
-                      <div className="flex-1 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-800">Target {item.percent}%</span>
-                          <span className="text-gray-400">•</span>
-                          <span className="text-xs text-gray-600">~{Math.round(82000 * item.percent / 100).toLocaleString()} users</span>
-                        </div>
-                        <span className="text-sm font-semibold text-slate-700">Wait {item.time}h</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-2 items-start text-xs bg-blue-50 border border-blue-200 p-3 rounded-lg">
-                  <span className="text-base">💡</span>
-                  <div>
-                    <p className="text-blue-900 font-medium mb-1">Gradual Rollout</p>
-                    <p className="text-blue-700 leading-relaxed">Uses the global stage configuration. After saving, click <strong>Start Rollout</strong> to choose your target segment and begin.</p>
-                  </div>
-                </div>
-              </div>
             </div>
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
               <button onClick={() => setAddModal(null)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
