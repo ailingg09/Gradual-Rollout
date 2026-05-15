@@ -163,19 +163,7 @@ const INITIAL_PLATFORMS: PlatformData[] = [
         downloadLinks: ['https://apps.apple.com/app/hz/id123456789', '', '', ''],
         changelogZh: '错误修复和稳定性改进', changelogEn: 'Bug fixes and stability improvements',
         isLatest: false, isDefault: false, isMinVersion: false, isFaulty: false,
-        updatedAt: '2025-09-01 14:20:00', rolloutHistory: [],
-        rollout: {
-          stages: [
-            { id: 1, target: '5%',   users: 4100,  time: '6 hours',  status: 'completed' },
-            { id: 2, target: '15%',  users: 12300, time: '6 hours',  status: 'completed' },
-            { id: 3, target: '40%',  users: 32800, time: '12 hours', status: 'completed' },
-            { id: 4, target: '100%', users: 82000, time: '0 hours',  status: 'completed' },
-          ],
-          stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
-          segment: 'All Users', startTime: '2025-08-22 08:00:00',
-          currentPercent: 100, currentUsers: 82000, totalTargetUsers: 82000,
-          expanded: false, status: 'completed',
-        },
+        updatedAt: '2025-09-01 14:20:00', rolloutHistory: [], rollout: undefined,
       },
       {
         id: 'ios-2.0.3', version: '2.0.3',
