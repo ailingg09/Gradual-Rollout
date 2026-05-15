@@ -227,7 +227,19 @@ const INITIAL_PLATFORMS: PlatformData[] = [
         downloadLinks: ['https://down.hznode.cc/hz1.0.21.apk', '', '', ''],
         changelogZh: 'Bug fixes', changelogEn: 'Bug fixes',
         isLatest: false, isDefault: true, isMinVersion: false, isFaulty: false,
-        updatedAt: '2025-09-29 15:44:36', rolloutHistory: [], rollout: undefined,
+        updatedAt: '2025-09-29 15:44:36', rolloutHistory: [],
+        rollout: {
+          stages: [
+            { id: 1, target: '5%',   users: 260,  time: '6 hours',  status: 'completed' },
+            { id: 2, target: '15%',  users: 780,  time: '6 hours',  status: 'completed' },
+            { id: 3, target: '40%',  users: 2080, time: '12 hours', status: 'completed' },
+            { id: 4, target: '100%', users: 5200, time: '0 hours',  status: 'completed' },
+          ],
+          stageConfig: INITIAL_GLOBAL_CONFIG.map(s => ({ ...s })),
+          segment: 'VIP Users', startTime: '2025-09-20 10:00:00',
+          currentPercent: 100, currentUsers: 5200, totalTargetUsers: 5200,
+          expanded: false, status: 'completed',
+        },
       },
       {
         id: 'android-1.0.20', version: '1.0.20',
@@ -656,18 +668,36 @@ export default function AppVersionConfig() {
                 <div className="text-green-600"><Check size={16} /></div>
                 <span>Gradual Rollout Progress</span>
                 <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-semibold">Completed</span>
-                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
               </div>
               <span className="text-xs text-gray-400">(Note: Release data retained for 1 month)</span>
             </div>
-            <div className="flex justify-between text-xs font-medium mb-1">
+            <div className="flex justify-between text-xs font-semibold mb-1">
               <span className="text-slate-700">Current Update Status</span>
               <span className="text-green-700">100%</span>
             </div>
             <p className="text-xs text-gray-500 mb-2">{r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users have updated</p>
-            <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
+            <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden mb-3">
               <div className="bg-green-500 h-full w-full" />
             </div>
+            <div className="flex items-center justify-between py-2 border-t border-green-200">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={14} className="text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Target Segment</p>
+                  <p className="text-xs font-semibold text-slate-700">{r.segment || 'All Users'}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-500">100% of users have updated</p>
+                <p className="text-xs text-green-600 font-medium">Rollout completed</p>
+              </div>
+            </div>
+          </div>
+          <div className="px-3 pb-3 bg-green-50/60">
+            <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors">
+              <Rocket size={15} /> Rerun Rollout
+            </button>
           </div>
         </div>
       );
