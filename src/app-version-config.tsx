@@ -648,12 +648,14 @@ export default function AppVersionConfig() {
               </div>
             </div>
           </div>
-          <div className="px-3 pb-3 bg-gray-50">
-            <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors">
-              <Rocket size={15} /> Rerun Rollout
-            </button>
-          </div>
+          {!version.isDefault && (
+            <div className="px-3 pb-3 bg-gray-50">
+              <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors">
+                <Rocket size={15} /> Rerun Rollout
+              </button>
+            </div>
+          )}
         </div>
       );
     }
@@ -693,12 +695,14 @@ export default function AppVersionConfig() {
               </div>
             </div>
           </div>
-          <div className="px-3 pb-3 bg-green-50/60">
-            <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors">
-              <Rocket size={15} /> Rerun Rollout
-            </button>
-          </div>
+          {!version.isDefault && (
+            <div className="px-3 pb-3 bg-green-50/60">
+              <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors">
+                <Rocket size={15} /> Rerun Rollout
+              </button>
+            </div>
+          )}
         </div>
       );
     }
