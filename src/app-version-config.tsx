@@ -23,13 +23,7 @@ const SEGMENT_SIZES: Record<string, number> = {
   'High Usage':          14600,
 };
 
-const SEGMENT_OVERLAPS: Record<string, Record<string, number>> = {
-  'Beta Testers': { 'VIP Users': 320, 'High Usage': 480, 'Churn Risk': 180, 'Internal Employees': 200 },
-  'VIP Users':    { 'Beta Testers': 320, 'High Usage': 1100, 'Churn Risk': 680, 'Internal Employees': 160 },
-  'High Usage':   { 'Beta Testers': 480, 'VIP Users': 1100, 'Churn Risk': 2200, 'Internal Employees': 180 },
-  'Churn Risk':   { 'Beta Testers': 180, 'VIP Users': 680, 'High Usage': 2200, 'Internal Employees': 80 },
-  'Internal Employees': { 'Beta Testers': 200, 'VIP Users': 160, 'High Usage': 180, 'Churn Risk': 80 },
-};
+
 
 const INITIAL_GLOBAL_CONFIG: StageConfig[] = [
   { id: 1, percent: 5,   time: 6  },
@@ -268,26 +262,6 @@ function segmentSize(segment: string): number {
 
 
 
-function getSegmentOverlap(fromSegment: string, fromUsersUpdated: number, toSegment: string): number {
-  if (fromSegment === toSegment) return fromUsersUpdated;
-  const fromTotal = segmentSize(fromSegment);
-  const updateRatio = fromTotal > 0 ? fromUsersUpdated / fromTotal : 0;
-  if (fromSegment === 'All Users') return Math.round(segmentSize(toSegment) * updateRatio);
-  if (toSegment === 'All Users')   return fromUsersUpdated;
-  const rawOverlap = SEGMENT_OVERLAPS[fromSegment]?.[toSegment] ?? SEGMENT_OVERLAPS[toSegment]?.[fromSegment] ?? 0;
-  return Math.round(rawOverlap * updateRatio);
-}
-
-function applyDefaultTagOnCompletion(platforms: PlatformData[], platformId: string, versionId: string): PlatformData[] {
-  return platforms.map(p =>
-    p.id !== platformId ? p : { ...p, versions: p.versions.map(v => ({ ...v, isDefault: v.id === versionId })) }
-  );
-}
-
-function getStartingUsers(targetSegment: string, history: RolloutHistory[]): number {
-  const total = history.reduce((sum, h) => sum + getSegmentOverlap(h.segment, h.usersUpdated, targetSegment), 0);
-  return Math.min(total, segmentSize(targetSegment));
-}
 
 function buildRolloutFromConfig(stageConfig: StageConfig[], segment: string, prevExpanded = true): RolloutData {
   const total = segmentSize(segment);
@@ -548,11 +522,6 @@ export default function AppVersionConfig() {
   const updateStartStage = (id: number, f: 'percent' | 'time', v: number) => setStartRolloutForm(a => ({ ...a, stages: a.stages.map(s => s.id === id ? { ...s, [f]: v } : s) }));
   const addStartStage    = () => setStartRolloutForm(a => ({ ...a, stages: [...a.stages, { id: Date.now(), percent: 0, time: 6 }] }));
   const deleteStartStage = (id: number) => setStartRolloutForm(a => ({ ...a, stages: a.stages.filter(s => s.id !== id) }));
-
-  // ── Edit form helpers ──
-  const updateEditStage = (id: number, f: 'percent' | 'time', v: number) => setEditForm(e => ({ ...e, rolloutStages: e.rolloutStages.map(s => s.id === id ? { ...s, [f]: v } : s), rolloutModified: true }));
-  const addEditStage    = () => setEditForm(e => ({ ...e, rolloutStages: [...e.rolloutStages, { id: Date.now(), percent: 0, time: 6 }], rolloutModified: true }));
-  const deleteEditStage = (id: number) => setEditForm(e => ({ ...e, rolloutStages: e.rolloutStages.filter(s => s.id !== id), rolloutModified: true }));
 
   // ── Global config helpers ──
   const updateGlobalStage = (id: number, f: 'percent' | 'time', v: string) => setGlobalStages(prev => prev.map(s => s.id === id ? { ...s, [f]: Number(v) } : s));
@@ -986,7 +955,7 @@ export default function AppVersionConfig() {
           <div className="bg-white rounded-lg w-full max-w-2xl my-8 shadow-2xl flex flex-col max-h-[90vh]">
             <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex justify-between items-center rounded-t-lg">
               <h2 className="text-lg font-bold text-slate-800">Edit {editingPlatform?.name} v{editingVersion?.version} Configuration</h2>
-              <button onClick={() => { setEditModal(null); setShowRerunConfirm(false); }} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              <button onClick={() => setEditModal(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <div className="p-6 space-y-4 overflow-y-auto">
               <div className="space-y-1">
