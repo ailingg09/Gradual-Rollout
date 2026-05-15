@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   ChevronRight, ChevronDown, Plus, MoreHorizontal, Edit2,
-  Copy, Trash2, Clock, Settings, Save, X, RotateCcw, Check, RefreshCw, Play, Rocket,
+  Copy, Trash2, Clock, Settings, Save, X, RotateCcw, Check, RefreshCw, Play, Rocket, TrendingUp,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -430,7 +430,6 @@ export default function AppVersionConfig() {
   const [platforms, setPlatforms] = useState<PlatformData[]>(INITIAL_PLATFORMS);
   const [globalStages, setGlobalStages] = useState<StageConfig[]>(INITIAL_GLOBAL_CONFIG);
   const [showGlobalConfigModal, setShowGlobalConfigModal] = useState(false);
-  const [showRerunConfirm, setShowRerunConfirm] = useState(false);
 
   // Stop Release
   const [stopReleaseTarget, setStopReleaseTarget] = useState<{ platformId: string; versionId: string } | null>(null);
@@ -626,41 +625,6 @@ export default function AppVersionConfig() {
     setEditModal(null);
   };
 
-  const handleRerunRollout = () => {
-    if (!editModal) return;
-    const prevVersion = platforms.find(p => p.id === editModal.platformId)?.versions.find(v => v.id === editModal.versionId);
-    const prevSeg = prevVersion?.rollout?.status !== 'not_started' ? prevVersion?.rollout?.segment ?? null : null;
-    const completionEarnsDefault = prevSeg === '' || prevSeg === 'All Users';
-
-    setPlatforms(prev => {
-      let next = prev.map(p =>
-        p.id !== editModal.platformId ? p : {
-          ...p, versions: p.versions.map(v => {
-            if (v.id !== editModal.versionId) return v;
-            const cfg = editForm.editUseGlobal ? globalStages : editForm.rolloutStages;
-            const seg = editForm.rolloutSegment || 'All Users';
-            const newHistory: RolloutHistory[] = [...v.rolloutHistory, ...(v.rollout && v.rollout.status !== 'not_started' && v.rollout.currentUsers > 0 ? [{ segment: v.rollout.segment, usersUpdated: v.rollout.currentUsers, completedAt: new Date().toISOString().replace('T', ' ').substring(0, 19) }] : [])];
-            const startingUsers = getStartingUsers(seg, newHistory);
-            const total = segmentSize(seg);
-            const last  = cfg[cfg.length - 1];
-            const totalTargetUsers = Math.round(total * (last?.percent ?? 100) / 100);
-            const startingPercent  = totalTargetUsers > 0 ? Math.round((startingUsers / totalTargetUsers) * 1000) / 10 : 0;
-            const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
-            const stages: RolloutStageDisplay[] = cfg.map((s, i) => ({
-              id: i + 1, target: `${s.percent}%`, users: Math.round(total * s.percent / 100), time: `${s.time} hours`,
-              status: i === 0 ? 'active' : 'pending',
-              timeLeft: i === 0 ? `${s.time}h 0m left` : undefined,
-            }));
-            return { ...v, rolloutHistory: newHistory, rollout: { stages, stageConfig: cfg.map(s => ({ ...s })), segment: seg, startTime: now, currentPercent: startingPercent, currentUsers: startingUsers, totalTargetUsers, expanded: true, status: 'in_progress' as RolloutStatus } };
-          }),
-        }
-      );
-      if (completionEarnsDefault) next = applyDefaultTagOnCompletion(next, editModal.platformId, editModal.versionId);
-      return next;
-    });
-    setEditModal(null);
-  };
-
   // ─────────────────────────────────────────────────────────────────────────────
   // Render helpers
   // ─────────────────────────────────────────────────────────────────────────────
@@ -674,24 +638,40 @@ export default function AppVersionConfig() {
       return (
         <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
           <div className="p-3 bg-gray-50">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
                 <div className="text-gray-400"><Settings size={15} /></div>
                 <span>Gradual Rollout Progress</span>
-                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
               </div>
               <span className="text-xs text-gray-400">(Note: Release data retained for 1 month)</span>
             </div>
-            <div className="mt-3">
-              <div className="flex justify-between text-xs font-medium mb-1">
-                <span className="text-gray-500">Current Update Status</span>
-                <span className="text-gray-500">{r.currentPercent}%</span>
+            <div className="flex justify-between text-xs font-semibold mb-1">
+              <span className="text-slate-700">Current Update Status</span>
+              <span className="text-slate-700">{r.currentPercent}%</span>
+            </div>
+            <p className="text-xs text-gray-400 mb-2">{r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users have updated</p>
+            <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden mb-3">
+              <div className="bg-gray-400 h-full transition-all" style={{ width: `${r.currentPercent}%` }} />
+            </div>
+            <div className="flex items-center justify-between py-2 border-t border-gray-200">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={14} className="text-gray-400" />
+                <div>
+                  <p className="text-xs text-gray-500">Target Segment</p>
+                  <p className="text-xs font-semibold text-slate-700">{r.segment || 'All Users'}</p>
+                </div>
               </div>
-              <p className="text-xs text-gray-400 mb-2">{r.currentUsers.toLocaleString()} of {r.totalTargetUsers.toLocaleString()} target users had updated</p>
-              <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
-                <div className="bg-gray-400 h-full transition-all" style={{ width: `${r.currentPercent}%` }} />
+              <div className="text-right">
+                <p className="text-xs text-gray-500">{r.currentPercent}% of users have updated</p>
+                <p className="text-xs text-red-500 font-medium">Rollout stopped</p>
               </div>
             </div>
+          </div>
+          <div className="px-3 pb-3 bg-gray-50">
+            <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors">
+              <Rocket size={15} /> Rerun Rollout
+            </button>
           </div>
         </div>
       );
@@ -1050,78 +1030,10 @@ export default function AppVersionConfig() {
                 </div>
               </div>
 
-              {/* Rollout section — latest versions only */}
-              {editingVersion?.isLatest && editingVersion.rollout && (() => {
-                const rs = editingVersion.rollout.status;
-                return (
-                  <>
-                    <hr className="border-gray-100" />
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-slate-700">Gradual Rollout Configuration</h3>
-                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">Latest Version Only</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block text-sm font-medium text-slate-700">Target Segment</label>
-                        <SegmentDropdownImpl value={editForm.rolloutSegment} onChange={v => setEditForm(f => ({ ...f, rolloutSegment: v, rolloutModified: true }))} />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="block text-sm font-medium text-slate-700">Rollout Stages</label>
-                          <button type="button" onClick={() => setEditForm(f => ({ ...f, editUseGlobal: !f.editUseGlobal, rolloutStages: !f.editUseGlobal ? f.rolloutStages : globalStages.map(s => ({ ...s })), rolloutModified: true }))}
-                            className={`text-xs px-3 py-1 rounded-full border font-medium transition-all ${editForm.editUseGlobal ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'}`}>
-                            {editForm.editUseGlobal ? 'Using Global Config — Switch to Custom' : 'Using Custom Config — Switch to Global'}
-                          </button>
-                        </div>
-                        {editForm.editUseGlobal ? (
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-2 border border-blue-200">
-                            {globalStages.map((item, index) => (
-                              <div key={item.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center gap-3">
-                                <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs border border-blue-100 shrink-0">{index + 1}</div>
-                                <div className="flex-1 flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-bold text-slate-800">Target {item.percent}%</span>
-                                    <span className="text-gray-400">•</span>
-                                    <span className="text-xs text-gray-600">~{Math.round(segmentSize(editForm.rolloutSegment || 'All Users') * item.percent / 100).toLocaleString()} users</span>
-                                  </div>
-                                  <span className="text-sm font-semibold text-slate-700">Wait {item.time}h</span>
-                                </div>
-                              </div>
-                            ))}
-                            <p className="text-xs text-gray-400 text-center pt-1">Click the button above to customise stages</p>
-                          </div>
-                        ) : (
-                          <StagesEditor stages={editForm.rolloutStages} onChange={updateEditStage} onAdd={addEditStage} onDelete={deleteEditStage} />
-                        )}
-                      </div>
-                      {editForm.rolloutModified && rs !== 'not_started' && (
-                        <div className="flex gap-2 items-start text-xs bg-amber-50 border border-amber-200 p-3 rounded-lg">
-                          <span className="text-base shrink-0">⚠️</span>
-                          <div>
-                            <p className="text-amber-800 font-medium mb-0.5">Rollout configuration changed</p>
-                            <p className="text-amber-700 leading-relaxed">Click <strong>Rerun Rollout</strong> to restart with the new configuration and target segment. Users who already updated will keep their version.</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
             </div>
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center rounded-b-lg">
-              <div>
-                {editingVersion?.isLatest && editingVersion.rollout?.status !== 'not_started' && editForm.rolloutModified && (
-                  <button onClick={() => setShowRerunConfirm(true)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2 transition-colors">
-                    <RefreshCw size={15} /> Rerun Rollout
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => { setEditModal(null); setShowRerunConfirm(false); }} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                <button onClick={handleSaveEdit} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"><Save size={16} /> Save</button>
-              </div>
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
+              <button onClick={() => setEditModal(null)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveEdit} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"><Save size={16} /> Save</button>
             </div>
           </div>
         </div>
@@ -1192,37 +1104,6 @@ export default function AppVersionConfig() {
                 <button onClick={() => setShowGlobalConfigModal(false)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button onClick={() => setShowGlobalConfigModal(false)} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 flex items-center gap-2"><Save size={16} /> Save Config</button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════
-          RERUN ROLLOUT CONFIRMATION
-      ═══════════════════════════════════════════════════════════════════════ */}
-      {showRerunConfirm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-lg w-full max-w-sm shadow-2xl">
-            <div className="p-5">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center shrink-0"><RefreshCw size={18} className="text-purple-600" /></div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800">Confirm Rerun Rollout</h3>
-                  <p className="text-xs text-gray-500">Resets rollout to Not Started — you'll press Start to begin</p>
-                </div>
-              </div>
-              <p className="text-sm text-slate-700 mb-3">Are you sure you want to rerun the rollout for <strong>v{editingVersion?.version}</strong>?</p>
-              <div className="bg-purple-50 border border-purple-100 rounded-md p-3 text-xs text-purple-800 space-y-1.5">
-                <p>• Target segment: <strong>{editForm.rolloutSegment || 'All Users'}</strong></p>
-                <p>• Rollout will be reset — press Start on Stage 1 to begin</p>
-                <p>• Users who already updated will keep their version</p>
-              </div>
-            </div>
-            <div className="px-5 pb-5 flex justify-end gap-3">
-              <button onClick={() => setShowRerunConfirm(false)} className="px-4 py-2 bg-white border border-gray-300 rounded text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={() => { setShowRerunConfirm(false); handleRerunRollout(); }} className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700 flex items-center gap-2">
-                <RefreshCw size={14} /> Confirm Rerun
-              </button>
             </div>
           </div>
         </div>
