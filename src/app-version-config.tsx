@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   ChevronRight, ChevronDown, Plus, MoreHorizontal, Edit2,
-  Copy, Trash2, Clock, Settings, Save, X, RotateCcw, Check, RefreshCw, Play,
+  Copy, Trash2, Clock, Settings, Save, X, RotateCcw, Check, RefreshCw, Play, Rocket,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -674,10 +674,13 @@ export default function AppVersionConfig() {
       return (
         <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
           <div className="p-3 bg-gray-50">
-            <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-              <div className="text-gray-400"><Settings size={15} /></div>
-              <span>Gradual Rollout</span>
-              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                <div className="text-gray-400"><Settings size={15} /></div>
+                <span>Gradual Rollout Progress</span>
+                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
+              </div>
+              <span className="text-xs text-gray-400">(Note: Release data retained for 1 month)</span>
             </div>
             <div className="mt-3">
               <div className="flex justify-between text-xs font-medium mb-1">
@@ -699,11 +702,14 @@ export default function AppVersionConfig() {
       return (
         <div className="border border-green-200 rounded-lg bg-white overflow-hidden">
           <div className="p-3 bg-green-50/60">
-            <div className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-3">
-              <div className="text-green-600"><Check size={16} /></div>
-              <span>Gradual Rollout</span>
-              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-semibold">Completed</span>
-              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                <div className="text-green-600"><Check size={16} /></div>
+                <span>Gradual Rollout Progress</span>
+                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-semibold">Completed</span>
+                <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
+              </div>
+              <span className="text-xs text-gray-400">(Note: Release data retained for 1 month)</span>
             </div>
             <div className="flex justify-between text-xs font-medium mb-1">
               <span className="text-slate-700">Current Update Status</span>
@@ -726,26 +732,24 @@ export default function AppVersionConfig() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
                 <div className="text-slate-400"><Settings size={16} /></div>
-                <span>Gradual Rollout</span>
-                <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded text-xs font-semibold">Not Started</span>
+                <span>Gradual Rollout Progress</span>
               </div>
-              <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-md hover:bg-green-700 transition-colors shrink-0">
-                <Play size={11} /> Start Rollout
-              </button>
+              <span className="text-xs text-gray-400">(Note: Release data retained for 1 month)</span>
             </div>
             <div className="flex justify-between text-xs font-medium mb-1">
-              <span className="text-slate-600">Current Update Status</span>
-              <span className="text-slate-600">0%</span>
+              <span className="text-slate-600 font-semibold">Current Update Status</span>
+              <span className="text-slate-600">0.0%</span>
             </div>
             <p className="text-xs text-gray-400 mb-2">0 of {r.totalTargetUsers.toLocaleString()} target users have updated</p>
-            <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
+            <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden mb-3">
               <div className="bg-gray-300 h-full w-0" />
             </div>
-            <div className="mt-3 flex justify-end">
-              <button onClick={e => { e.stopPropagation(); setStopReleaseTarget({ platformId, versionId: version.id }); }}
-                className="text-xs text-red-500 flex items-center gap-1 hover:underline"><Trash2 size={12} /> Stop Release</button>
-            </div>
+          </div>
+          <div className="px-3 pb-3 bg-gray-50">
+            <button onClick={e => { e.stopPropagation(); openStartRolloutDialog(platformId, version.id); }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors">
+              <Rocket size={15} /> Start Rollout
+            </button>
           </div>
         </div>
       );
@@ -758,10 +762,11 @@ export default function AppVersionConfig() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2 text-sm font-medium text-slate-800 flex-wrap">
               <div className="text-blue-600"><Settings size={16} /></div>
-              <span>Gradual Rollout</span>
+              <span>Gradual Rollout Progress</span>
               <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{getActiveStageBadge(r)}</span>
               <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">{r.segment || 'All Users'}</span>
             </div>
+            <span className="text-xs text-gray-400 shrink-0">(Note: Release data retained for 1 month)</span>
           </div>
           <div className="flex justify-between text-xs font-medium mb-1">
             <span className="text-slate-700">Current Update Status</span>
@@ -854,21 +859,21 @@ export default function AppVersionConfig() {
                             : version.isLatest ? 'border-blue-200'
                             : 'border-gray-200'
                         }`}>
-                        <div className="flex justify-between items-start mb-2">
+                        <div className="flex justify-between items-start mb-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-lg text-slate-800">v{version.version}</span>
-                            {version.isLatest && <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">Latest Version</span>}
-                            {version.isDefault && <span className="bg-black text-white text-xs px-2 py-0.5 rounded-full">Default Version</span>}
-                            {version.isMinVersion && <span className="bg-gray-400 text-white text-xs px-2 py-0.5 rounded-full">Min Version</span>}
-                            {version.isFaulty && <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full font-semibold">Faulty</span>}
+                            {version.isLatest && <span className="bg-green-500 text-white text-xs px-2 py-0.5 rounded">Latest</span>}
+                            {version.isDefault && <span className="bg-black text-white text-xs px-2 py-0.5 rounded">Default</span>}
+                            {version.isMinVersion && <span className="bg-gray-400 text-white text-xs px-2 py-0.5 rounded">Min</span>}
+                            {version.isFaulty && <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded font-semibold">Faulty</span>}
                           </div>
                           {/* Action icons */}
-                          <div className="flex gap-2 text-gray-400 shrink-0 items-center">
+                          <div className="flex gap-1 text-gray-400 shrink-0 items-center">
                             {/* More menu */}
                             <div className="relative" data-more-menu>
                               <button onClick={e => { e.stopPropagation(); setOpenMoreMenu(openMoreMenu === version.id ? null : version.id); }}
-                                className="hover:text-gray-600 transition-colors p-0.5 rounded hover:bg-gray-100">
-                                <MoreHorizontal size={20} />
+                                className="hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100">
+                                <MoreHorizontal size={18} />
                               </button>
                               {openMoreMenu === version.id && (
                                 <div className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-lg shadow-xl w-48 py-1">
@@ -888,17 +893,51 @@ export default function AppVersionConfig() {
                                 </div>
                               )}
                             </div>
-                            <button onClick={() => openEditModal(platform.id, version.id)} className="hover:text-blue-600 transition-colors">
-                              <Edit2 size={18} />
+                            <button onClick={() => openEditModal(platform.id, version.id)} className="hover:text-blue-600 transition-colors p-1 rounded hover:bg-gray-100">
+                              <Edit2 size={17} />
+                            </button>
+                            <button className="hover:text-red-500 transition-colors p-1 rounded hover:bg-gray-100">
+                              <Trash2 size={17} />
                             </button>
                           </div>
                         </div>
 
-                        <p className="text-xs text-gray-500 mb-3">Updated: {version.updatedAt}</p>
-                        <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-                          <Copy size={14} className="shrink-0" />
-                          <span className="truncate">{version.downloadLinks[0] || 'No download link'}</span>
-                          {version.downloadLinks[0] && <Copy size={14} className="cursor-pointer hover:text-blue-500 shrink-0" />}
+                        <p className="text-xs text-gray-400 mb-3">Updated on: {version.updatedAt}</p>
+
+                        {/* Changelog row */}
+                        <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                          <span>Changelog:</span>
+                          <button className="text-gray-400 hover:text-gray-600 transition-colors"><RefreshCw size={15} /></button>
+                        </div>
+
+                        {/* Download links — two columns */}
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <p className="text-sm text-gray-600 mb-2">In-App Download Links:</p>
+                            <div className="space-y-1.5">
+                              {[version.downloadLinks[0], version.downloadLinks[1]].some(Boolean)
+                                ? [version.downloadLinks[0], version.downloadLinks[1]].map((link, i) => link ? (
+                                  <div key={i} className="flex items-center gap-1.5 border border-gray-200 rounded px-2 py-1.5 bg-white">
+                                    <Copy size={12} className="shrink-0 text-gray-400" />
+                                    <span className="truncate text-xs text-gray-600">{link}</span>
+                                  </div>
+                                ) : null)
+                                : <p className="text-xs text-gray-400">No links</p>}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600 mb-2">Website Download Links:</p>
+                            <div className="space-y-1.5">
+                              {[version.downloadLinks[2], version.downloadLinks[3]].some(Boolean)
+                                ? [version.downloadLinks[2], version.downloadLinks[3]].map((link, i) => link ? (
+                                  <div key={i} className="flex items-center gap-1.5 border border-gray-200 rounded px-2 py-1.5 bg-white">
+                                    <Copy size={12} className="shrink-0 text-gray-400" />
+                                    <span className="truncate text-xs text-gray-600">{link}</span>
+                                  </div>
+                                ) : null)
+                                : <p className="text-xs text-gray-400">No links</p>}
+                            </div>
+                          </div>
                         </div>
 
                         {renderRolloutBox(platform.id, version)}
